@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "heat-transfer-mcp"
+version = "1.0.0"
+description = "MCP server for thermal engineering calculations with automatic unit conversion"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "hvkshetry", email = "hvkshetry@gmail.com"}
+]
+keywords = ["mcp", "heat-transfer", "thermal-engineering", "unit-conversion", "wastewater"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "mcp>=0.5.0",
+    "ht>=1.0.0",
+    "thermo>=0.2.20",
+    "pint>=0.20.0",
+    "requests>=2.28.0",
+    "asyncio-mqtt>=0.11.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.20.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/puran-water/heat-transfer-mcp"
+Repository = "https://github.com/puran-water/heat-transfer-mcp"
+Issues = "https://github.com/puran-water/heat-transfer-mcp/issues"
+
+[tool.setuptools.packages.find]
+include = ["tools*", "utils*"]
+
+[tool.black]
+line-length = 127
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["tools", "utils", "server"]
+omit = ["tests/*", "archive/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]

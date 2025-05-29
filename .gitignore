@@ -67,7 +67,6 @@ env/
 Thumbs.db
 
 # Project specific
-/tests/
 /archive/
 claude_desktop_config*.json
 *.log
@@ -80,10 +79,10 @@ configure_claude_desktop.py
 server_unit_aware.py
 server_auto_unit_aware.py
 
-# Test outputs
-test_*.py
-diagnose_*.py
-analyze_*.py
-check_*.py
-inspect_*.py
-deep_*.py
+# Test outputs - exclude archive test files only
+archive/test_*.py
+archive/diagnose_*.py
+archive/analyze_*.py
+archive/check_*.py
+archive/inspect_*.py
+archive/deep_*.py

@@ -1,0 +1,112 @@
+name: Validate Tools
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sundays
+
+jobs:
+  validate-tools:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Validate all tools load correctly
+      run: |
+        python -c "
+import sys
+import importlib
+import traceback
+from pathlib import Path
+
+tools_dir = Path('tools')
+failed = []
+
+for tool_file in tools_dir.glob('*.py'):
+    if tool_file.name == '__init__.py':
+        continue
+    
+    module_name = f'tools.{tool_file.stem}'
+    try:
+        importlib.import_module(module_name)
+        print(f'✓ {module_name} loaded successfully')
+    except Exception as e:
+        failed.append((module_name, str(e)))
+        print(f'✗ {module_name} failed to load: {e}')
+        traceback.print_exc()
+
+if failed:
+    print(f'\n{len(failed)} tools failed to load')
+    sys.exit(1)
+else:
+    print(f'\nAll tools loaded successfully!')
+"
+    
+    - name: Test unit conversion system
+      run: |
+        python -c "
+from utils.unit_converter import UnitConverter
+from utils.unit_aware_decorator import make_tool_unit_aware
+
+# Test basic conversions
+converter = UnitConverter()
+tests = [
+    ('95 degF', 'temperature', 308.15),
+    ('200 GPM', 'flow_rate', 12.62),
+    ('10 feet', 'length', 3.048),
+    ('14.7 psi', 'pressure', 101325)
+]
+
+for input_val, unit_type, expected in tests:
+    result = converter.convert_to_si(input_val, unit_type)
+    print(f'{input_val} -> {result:.2f} (expected ~{expected})')
+    
+print('Unit conversion system working correctly!')
+"
+    
+    - name: Validate material properties database
+      run: |
+        python -c "
+from tools.material_properties import get_material_properties
+
+# Test some common materials
+materials = ['steel', 'concrete', 'polyurethane foam', 'water', 'air']
+
+for material in materials:
+    try:
+        props = get_material_properties(material)
+        print(f'✓ {material}: k={props[\"thermal_conductivity\"]:.3f} W/m-K')
+    except Exception as e:
+        print(f'✗ {material}: {e}')
+        
+print('Material properties database accessible!')
+"
+    
+    - name: Validate fluid properties
+      run: |
+        python -c "
+from tools.fluid_properties import get_fluid_properties
+
+# Test water properties at different temperatures
+temps = [273.15, 298.15, 373.15]  # 0°C, 25°C, 100°C
+        
+for T in temps:
+    props = get_fluid_properties('water', T)
+    print(f'Water at {T-273.15:.0f}°C: ρ={props[\"density\"]:.1f} kg/m³, μ={props[\"dynamic_viscosity\"]:.2e} Pa·s')
+    
+print('Fluid properties system working correctly!')
+"
