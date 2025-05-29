@@ -31,15 +31,6 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-## Quick Start
-
-Run the MCP server:
-```bash
-python server.py
-```
-
-The server will automatically detect and enable unit conversion support. For detailed setup instructions, see the [Setup Guide](SETUP.md).
-
 ## Available Tools
 
 ### 1. **get_ambient_conditions**
