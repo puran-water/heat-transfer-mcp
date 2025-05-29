@@ -160,7 +160,7 @@ For use with Claude Desktop, update your configuration:
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.10+
 - Dependencies listed in requirements.txt
 
 ## Contributing
