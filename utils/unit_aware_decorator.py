@@ -124,7 +124,7 @@ def detect_unit_type(value: str) -> Optional[str]:
     return None
 
 def convert_value(value: Any, param_type: str, param_name: str = None, 
-                 fluid_density: float = 1000.0) -> Any:
+                 fluid_density: Optional[float] = None) -> Any:
     """Convert a single value based on parameter type.
     
     Args:
@@ -186,6 +186,7 @@ def convert_dict_values(data: Dict[str, Any], mappings: Dict[str, str]) -> Dict[
     """
     converted = {}
     
+    # First pass: convert all non-volume_flow parameters
     for key, value in data.items():
         if value is None:
             converted[key] = None
@@ -194,6 +195,11 @@ def convert_dict_values(data: Dict[str, Any], mappings: Dict[str, str]) -> Dict[
         # Check if this parameter has a mapping
         if key in mappings:
             param_type = mappings[key]
+            
+            # Skip volume_flow for now - need to handle with fluid density
+            if param_type == 'volume_flow':
+                converted[key] = value  # Keep original for now
+                continue
             
             # Handle nested dictionaries (like dimensions)
             if param_type == 'nested' and isinstance(value, dict):
@@ -225,8 +231,51 @@ def convert_dict_values(data: Dict[str, Any], mappings: Dict[str, str]) -> Dict[
         else:
             # No mapping, pass through
             converted[key] = value
+    
+    # Second pass: handle volume_flow conversions with fluid density
+    for key, value in data.items():
+        if key in mappings and mappings[key] == 'volume_flow' and value is not None:
+            # Try to get fluid density for conversion
+            fluid_density = _get_fluid_density_for_conversion(converted)
+            if fluid_density:
+                try:
+                    converted[key] = convert_value(value, 'volume_flow', key, fluid_density)
+                except Exception as e:
+                    logger.warning(f"Could not convert volume flow {key}: {e}. Using original value.")
+                    converted[key] = value
+            else:
+                logger.warning(f"No fluid density available for volume flow conversion of {key}. Using original value.")
+                converted[key] = value
             
     return converted
+
+def _get_fluid_density_for_conversion(converted_params: Dict[str, Any]) -> Optional[float]:
+    """Try to determine fluid density from converted parameters.
+    
+    This function attempts to get fluid density by looking for fluid_name and temperature
+    in the parameters and calling get_fluid_properties if available.
+    """
+    try:
+        # Check if we have fluid_name and temperature to get density
+        fluid_name = converted_params.get('fluid_name')
+        temperature = converted_params.get('temperature') or converted_params.get('inlet_temp') or converted_params.get('bulk_fluid_temperature')
+        pressure = converted_params.get('pressure', 101325.0)  # Standard pressure default
+        
+        if fluid_name and temperature:
+            # Import here to avoid circular imports
+            from tools.fluid_properties import get_fluid_properties
+            import json
+            
+            props_json = get_fluid_properties(fluid_name, temperature, pressure)
+            props = json.loads(props_json)
+            
+            if 'error' not in props and 'density' in props:
+                return props['density']
+                
+    except Exception as e:
+        logger.debug(f"Could not determine fluid density: {e}")
+    
+    return None
 
 def unit_aware(param_mappings: Dict[str, str]):
     """Decorator to make a function unit-aware.

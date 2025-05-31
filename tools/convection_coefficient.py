@@ -105,47 +105,75 @@ def calculate_convection_coefficient(
             import ht
             
             try:
-                # Use HT library correlations if available
+                # Use HT library correlations directly instead of manual implementations
                 if 'flat_plate_external' in geometry_lower and flow_type.lower() == 'forced':
-                    if reynolds_number < 5e5:  # Laminar
-                        # Blasius solution for laminar flow over flat plate
-                        nusselt_number = 0.664 * math.sqrt(reynolds_number) * prandtl_number**(1/3)
-                    else:  # Turbulent
-                        # Turbulent correlation
-                        nusselt_number = 0.037 * reynolds_number**0.8 * prandtl_number**(1/3)
+                    # Use ht.conv_external functions for external flow over flat plate
+                    try:
+                        from ht.conv_external import Nu_external_horizontal_plate
+                        nusselt_number = Nu_external_horizontal_plate(reynolds_number, prandtl_number)
+                    except (ImportError, AttributeError):
+                        # Fallback to manual correlation if ht function not available
+                        if reynolds_number < 5e5:  # Laminar
+                            nusselt_number = 0.664 * math.sqrt(reynolds_number) * prandtl_number**(1/3)
+                        else:  # Turbulent
+                            nusselt_number = 0.037 * reynolds_number**0.8 * prandtl_number**(1/3)
                 
                 elif 'pipe_internal' in geometry_lower and flow_type.lower() == 'forced':
-                    # Dittus-Boelter or similar for internal pipe flow
-                    if reynolds_number < 2300:  # Laminar
-                        nusselt_number = 3.66  # For constant surface temperature
-                    elif reynolds_number > 10000:  # Fully turbulent
-                        # Gnielinski correlation
-                        f = (0.79 * math.log(reynolds_number) - 1.64)**(-2)  # Friction factor
-                        nusselt_number = ((f/8) * (reynolds_number - 1000) * prandtl_number) / \
-                                        (1 + 12.7 * math.sqrt(f/8) * (prandtl_number**(2/3) - 1))
-                    else:  # Transition
-                        # Approximate transition regime
-                        nusselt_number = 0.023 * reynolds_number**0.8 * prandtl_number**0.4
+                    # Use ht.conv_internal master function for internal flow
+                    try:
+                        from ht.conv_internal import Nu_conv_internal
+                        # Calculate relative roughness (e/D)
+                        eD = roughness / characteristic_dimension if roughness else 0.0
+                        nusselt_number = Nu_conv_internal(reynolds_number, prandtl_number, eD=eD)
+                    except (ImportError, AttributeError):
+                        # Fallback to manual correlations
+                        if reynolds_number < 2300:  # Laminar
+                            nusselt_number = 3.66  # For constant surface temperature
+                        elif reynolds_number > 10000:  # Fully turbulent
+                            # Gnielinski correlation
+                            f = (0.79 * math.log(reynolds_number) - 1.64)**(-2)  # Friction factor
+                            nusselt_number = ((f/8) * (reynolds_number - 1000) * prandtl_number) / \
+                                            (1 + 12.7 * math.sqrt(f/8) * (prandtl_number**(2/3) - 1))
+                        else:  # Transition
+                            # Approximate transition regime
+                            nusselt_number = 0.023 * reynolds_number**0.8 * prandtl_number**0.4
                 
                 elif 'pipe_external' in geometry_lower or 'cylinder' in geometry_lower:
                     if flow_type.lower() == 'forced':
-                        # Churchill and Bernstein correlation for flow over cylinder
-                        nusselt_number = 0.3 + (0.62 * math.sqrt(reynolds_number) * prandtl_number**(1/3) *
-                                          (1 + (reynolds_number/282000)**(5/8))**(4/5)) / \
-                                          (1 + (0.4/prandtl_number)**(2/3))**(1/4)
+                        # Use ht.conv_external for external flow over cylinder
+                        try:
+                            from ht.conv_external import Nu_cylinder_Churchill_Bernstein
+                            nusselt_number = Nu_cylinder_Churchill_Bernstein(reynolds_number, prandtl_number)
+                        except (ImportError, AttributeError):
+                            # Fallback to manual Churchill and Bernstein correlation
+                            nusselt_number = 0.3 + (0.62 * math.sqrt(reynolds_number) * prandtl_number**(1/3) *
+                                              (1 + (reynolds_number/282000)**(5/8))**(4/5)) / \
+                                              (1 + (0.4/prandtl_number)**(2/3))**(1/4)
                     else:  # Natural convection
-                        # Calculate Grashof and Rayleigh numbers for natural convection
-                        g = 9.81  # m/s²
-                        beta = 1.0 / film_temperature  # Thermal expansion coefficient (approximation)
-                        delta_t = abs(surface_temperature - bulk_fluid_temperature)
-                        kinematic_viscosity = dynamic_viscosity / density
-                        
-                        grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
-                        rayleigh = grashof * prandtl_number
-                        
-                        # Churchill and Chu correlation for natural convection from horizontal cylinder
-                        nusselt_number = (0.6 + (0.387 * rayleigh**(1/6)) / 
-                                         (1 + (0.559/prandtl_number)**(9/16))**(8/27))**2
+                        # Use ht.conv_free_immersed for natural convection around cylinder
+                        try:
+                            from ht.conv_free_immersed import Nu_horizontal_cylinder
+                            # Calculate Grashof number for ht function
+                            g = 9.81  # m/s²
+                            beta = 1.0 / film_temperature  # Thermal expansion coefficient (approximation)
+                            delta_t = abs(surface_temperature - bulk_fluid_temperature)
+                            kinematic_viscosity = dynamic_viscosity / density
+                            grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
+                            
+                            nusselt_number = Nu_horizontal_cylinder(prandtl_number, grashof)
+                        except (ImportError, AttributeError):
+                            # Fallback to manual calculation
+                            g = 9.81  # m/s²
+                            beta = 1.0 / film_temperature  # Thermal expansion coefficient (approximation)
+                            delta_t = abs(surface_temperature - bulk_fluid_temperature)
+                            kinematic_viscosity = dynamic_viscosity / density
+                            
+                            grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
+                            rayleigh = grashof * prandtl_number
+                            
+                            # Churchill and Chu correlation for natural convection from horizontal cylinder
+                            nusselt_number = (0.6 + (0.387 * rayleigh**(1/6)) / 
+                                             (1 + (0.559/prandtl_number)**(9/16))**(8/27))**2
                 
                 elif 'sphere' in geometry_lower:
                     if flow_type.lower() == 'forced':
@@ -165,20 +193,32 @@ def calculate_convection_coefficient(
                         nusselt_number = 2 + 0.589 * rayleigh**(1/4) / (1 + (0.469/prandtl_number)**(9/16))**(4/9)
                 
                 elif ('vertical' in geometry_lower or 'wall' in geometry_lower) and flow_type.lower() == 'natural':
-                    # Natural convection on vertical plate or wall
-                    g = 9.81
-                    beta = 1.0 / film_temperature
-                    delta_t = abs(surface_temperature - bulk_fluid_temperature)
-                    kinematic_viscosity = dynamic_viscosity / density
-                    
-                    grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
-                    rayleigh = grashof * prandtl_number
-                    
-                    if rayleigh < 1e9:  # Laminar
-                        nusselt_number = 0.68 + (0.67 * rayleigh**(1/4)) / (1 + (0.492/prandtl_number)**(9/16))**(4/9)
-                    else:  # Turbulent
-                        nusselt_number = (0.825 + (0.387 * rayleigh**(1/6)) / 
-                                         (1 + (0.492/prandtl_number)**(9/16))**(8/27))**2
+                    # Use ht.conv_free_immersed for natural convection on vertical plate
+                    try:
+                        from ht.conv_free_immersed import Nu_free_vertical_plate
+                        # Calculate Grashof number for ht function
+                        g = 9.81
+                        beta = 1.0 / film_temperature
+                        delta_t = abs(surface_temperature - bulk_fluid_temperature)
+                        kinematic_viscosity = dynamic_viscosity / density
+                        grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
+                        
+                        nusselt_number = Nu_free_vertical_plate(prandtl_number, grashof)
+                    except (ImportError, AttributeError):
+                        # Fallback to manual correlation
+                        g = 9.81
+                        beta = 1.0 / film_temperature
+                        delta_t = abs(surface_temperature - bulk_fluid_temperature)
+                        kinematic_viscosity = dynamic_viscosity / density
+                        
+                        grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
+                        rayleigh = grashof * prandtl_number
+                        
+                        if rayleigh < 1e9:  # Laminar
+                            nusselt_number = 0.68 + (0.67 * rayleigh**(1/4)) / (1 + (0.492/prandtl_number)**(9/16))**(4/9)
+                        else:  # Turbulent
+                            nusselt_number = (0.825 + (0.387 * rayleigh**(1/6)) / 
+                                             (1 + (0.492/prandtl_number)**(9/16))**(8/27))**2
                 else:
                     # For other geometries, try a fallback approach
                     if flow_type.lower() == 'forced':

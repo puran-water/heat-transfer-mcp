@@ -148,29 +148,57 @@ def size_heat_exchanger_area(
                 "error": f"Could not calculate LMTD: {str(e)}. Check inlet/outlet temperatures for crossover."
             })
             
-        # 3. Calculate LMTD Correction Factor (Ft)
+        # 3. Calculate LMTD Correction Factor (Ft) using ht library
         Ft = 1.0  # Default for counterflow/parallel
         
-        # For other flow arrangements, attempt to calculate F-factor
-        # This is a simplified approximation as the detailed calculation depends on 
-        # the specific heat exchanger geometry and flow configuration
+        # For shell-and-tube heat exchangers, use ht library for accurate Ft calculation
         if flow_arrangement.lower() not in ['counterflow', 'parallelflow']:
-            # Calculate P and R parameters
-            P = abs(cold_fluid_outlet_temp - cold_fluid_inlet_temp) / \
-                abs(hot_fluid_inlet_temp - cold_fluid_inlet_temp)
-            R = abs(hot_fluid_inlet_temp - hot_fluid_outlet_temp) / \
-                abs(cold_fluid_outlet_temp - cold_fluid_inlet_temp)
-            
-            # Simple F-factor approximation for shell & tube with 1 shell pass
-            if 'shell_tube' in flow_arrangement.lower():
-                # Very approximate formula for 1-shell pass, 2 or more tube passes
-                Z = (P - 1) / (P * R - 1) if (P * R - 1) != 0 else 0
-                Ft = math.sqrt(R**2 + 1) / (R - 1) * math.log((1 - P) / (1 - P * R)) / math.log((2 - P * (R + 1 - math.sqrt(R**2 + 1))) / (2 - P * (R + 1 + math.sqrt(R**2 + 1)))) if Z != 0 else 1.0
+            try:
+                # Use ht.hx.F_LMTD_Fakheri for shell-and-tube LMTD correction factor
+                if HT_AVAILABLE and 'shell_tube' in flow_arrangement.lower():
+                    from ht.hx import F_LMTD_Fakheri
+                    
+                    # F_LMTD_Fakheri(Thi, Tho, Tci, Tco, shells=1)
+                    Ft = F_LMTD_Fakheri(
+                        Thi=hot_fluid_inlet_temp,
+                        Tho=hot_fluid_outlet_temp, 
+                        Tci=cold_fluid_inlet_temp,
+                        Tco=cold_fluid_outlet_temp,
+                        shells=1  # Assume single shell pass
+                    )
+                    logger.info(f"Used ht.F_LMTD_Fakheri: Ft={Ft:.4f} for {flow_arrangement}")
+                    
+                else:
+                    # Fallback to simplified approximation if ht not available
+                    # Calculate P and R parameters
+                    P = abs(cold_fluid_outlet_temp - cold_fluid_inlet_temp) / \
+                        abs(hot_fluid_inlet_temp - cold_fluid_inlet_temp)
+                    R = abs(hot_fluid_inlet_temp - hot_fluid_outlet_temp) / \
+                        abs(cold_fluid_outlet_temp - cold_fluid_inlet_temp)
+                    
+                    # Simple F-factor approximation for shell & tube with 1 shell pass
+                    if 'shell_tube' in flow_arrangement.lower():
+                        # Very approximate formula for 1-shell pass, 2 or more tube passes
+                        Z = (P - 1) / (P * R - 1) if (P * R - 1) != 0 else 0
+                        Ft = math.sqrt(R**2 + 1) / (R - 1) * math.log((1 - P) / (1 - P * R)) / math.log((2 - P * (R + 1 - math.sqrt(R**2 + 1))) / (2 - P * (R + 1 + math.sqrt(R**2 + 1)))) if Z != 0 else 1.0
+                        
+                        # Constrain to reasonable values
+                        Ft = max(0.75, min(Ft, 1.0))
+                    
+                    logger.info(f"Used fallback approximation: Ft={Ft:.3f} for {flow_arrangement}")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to calculate Ft with ht library: {e}. Using fallback approximation.")
+                # Fallback calculation (same as above)
+                P = abs(cold_fluid_outlet_temp - cold_fluid_inlet_temp) / \
+                    abs(hot_fluid_inlet_temp - cold_fluid_inlet_temp)
+                R = abs(hot_fluid_inlet_temp - hot_fluid_outlet_temp) / \
+                    abs(cold_fluid_outlet_temp - cold_fluid_inlet_temp)
                 
-                # Constrain to reasonable values
-                Ft = max(0.75, min(Ft, 1.0))
-            
-            logger.info(f"Calculated LMTD correction factor Ft={Ft:.3f} for {flow_arrangement}")
+                if 'shell_tube' in flow_arrangement.lower():
+                    Z = (P - 1) / (P * R - 1) if (P * R - 1) != 0 else 0
+                    Ft = math.sqrt(R**2 + 1) / (R - 1) * math.log((1 - P) / (1 - P * R)) / math.log((2 - P * (R + 1 - math.sqrt(R**2 + 1))) / (2 - P * (R + 1 + math.sqrt(R**2 + 1)))) if Z != 0 else 1.0
+                    Ft = max(0.75, min(Ft, 1.0))
             
         # 4. Calculate convection coefficients if not provided
         h_calc_details = {}

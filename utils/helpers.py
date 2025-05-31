@@ -201,6 +201,7 @@ def calculate_ntu_effectiveness(
 ) -> float:
     """
     Calculate heat exchanger effectiveness using the NTU method.
+    Uses ht library functions when available for maximum accuracy.
     
     Args:
         ntu: Number of Transfer Units (dimensionless)
@@ -212,6 +213,31 @@ def calculate_ntu_effectiveness(
     """
     flow_lower = flow_arrangement.lower()
     
+    # Try to use ht library effectiveness functions first
+    if HT_AVAILABLE:
+        try:
+            from ht.hx import effectiveness_from_NTU
+            
+            # Map our flow arrangement names to ht library subtypes
+            subtype_map = {
+                'counterflow': 'counterflow',
+                'parallelflow': 'parallel',
+                'crossflow_unmixed': 'crossflow',
+                'crossflow': 'crossflow',
+                'shell_tube_1_pass': 'TEMA E', # TEMA E shell-and-tube configuration
+                'shell_and_tube': 'TEMA E'
+            }
+            
+            subtype = subtype_map.get(flow_lower, 'counterflow')
+            effectiveness = effectiveness_from_NTU(ntu, capacity_ratio, subtype=subtype)
+            
+            logger.debug(f"Used ht.effectiveness_from_NTU: ε={effectiveness:.4f} for {flow_arrangement}")
+            return effectiveness
+            
+        except (ImportError, Exception) as e:
+            logger.debug(f"ht library effectiveness calculation failed: {e}. Using fallback.")
+    
+    # Fallback to manual correlations if ht not available
     # Handle special case where Cmin/Cmax = 0 (e.g., condensing/evaporating fluid)
     if capacity_ratio < 0.001:
         return 1.0 - math.exp(-ntu)

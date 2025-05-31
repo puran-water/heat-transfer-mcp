@@ -157,14 +157,14 @@ def kg_per_s_to_lb_per_hr(flow_kg_s: float) -> float:
     return convert_units(flow_kg_s, 'kg/s', 'pound/hour')
 
 # Utility function to parse and convert user input
-def parse_and_convert(value_str: str, target_unit: str, param_type: Optional[str] = None, fluid_density: float = 1000.0) -> float:
+def parse_and_convert(value_str: str, target_unit: str, param_type: Optional[str] = None, fluid_density: Optional[float] = None) -> float:
     """Parse a value with optional unit and convert to target unit.
     
     Args:
         value_str: String that may contain value and unit (e.g., "70 degF", "100 feet", "50")
         target_unit: Target unit to convert to
         param_type: Optional parameter type hint (e.g., 'temperature', 'length', 'pressure')
-        fluid_density: Density in kg/m³ for volumetric to mass flow conversions
+        fluid_density: Density in kg/m³ for volumetric to mass flow conversions (required for volume_flow)
     
     Returns:
         Converted value in target units
@@ -186,6 +186,9 @@ def parse_and_convert(value_str: str, target_unit: str, param_type: Optional[str
             
             # Special handling for volumetric to mass flow conversion
             if target_unit == 'kg/s' and unit.upper() in ['GPM', 'MGD', 'L/S', 'M3/S']:
+                if fluid_density is None:
+                    raise ValueError(f"Fluid density is required for volumetric to mass flow conversion of {value_str}")
+                
                 # First convert to m³/s
                 if unit.upper() == 'GPM':
                     vol_flow_m3s = value * 0.0000631
@@ -198,7 +201,7 @@ def parse_and_convert(value_str: str, target_unit: str, param_type: Optional[str
                 else:
                     vol_flow_m3s = convert_units(value, unit, 'm^3/s')
                 
-                # Then convert to kg/s using density
+                # Then convert to kg/s using actual fluid density
                 return vol_flow_m3s * fluid_density
             
             return convert_units(value, unit, target_unit)
