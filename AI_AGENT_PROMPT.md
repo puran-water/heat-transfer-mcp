@@ -4,11 +4,10 @@ You have access to a specialized heat transfer calculation server that provides 
 
 ## Critical Usage Notes
 
-### 1. **Temperature Units - Smart Conversion Available**
-- The server supports both automatic unit conversion AND SI units
-- **With unit conversion**: Use `temperature="25 degC"` or `temperature="77 degF"`
-- **Without unit conversion**: Use `temperature=298.15` (Kelvin)
-- Check server logs on startup to see if unit conversion is enabled
+### 1. **Temperature Input**
+- **Current Implementation**: Use `temperature_c` parameter with Celsius values
+- Example: `temperature_c=25` (for 25°C)
+- Note: Documentation may show `temperature` but implementation uses `temperature_c`
 
 ### 2. **Unit Consistency** 
 - All tools expect SI units (meters, kg/s, Pascals, Watts, etc.)
@@ -24,6 +23,15 @@ You have access to a specialized heat transfer calculation server that provides 
 - All tools return JSON strings, not objects - parse before use
 - Check for "error" key in responses before proceeding
 - Fluid properties include phase information ('l' for liquid, 'g' for gas)
+
+## Quick Reference - Required Parameters
+- get_fluid_properties: fluid_name, temperature_c, pressure (optional), strict (optional)
+- calculate_convection_coefficient: geometry, characteristic_dimension, fluid_name, etc.
+
+## Typical Parameter Ranges
+- Temperature: 0-500°C (273-773K)
+- Pressure: 50,000-500,000 Pa
+- Flow velocity: 0.1-50 m/s
 
 ## Key Tool Capabilities
 
@@ -109,5 +117,6 @@ rho = props["density"]
 - Check that all required parameters are provided
 - Verify parameter names match exactly (case-sensitive)
 - Ensure numeric values are within reasonable ranges
+
 
 Remember: These tools implement ASHRAE/TEMA standards where applicable. When strict=True, correlations are from the peer-reviewed `ht` library by Caleb Bell.
