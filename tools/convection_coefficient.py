@@ -33,6 +33,7 @@ def calculate_convection_coefficient(
     flow_type: str = "forced",
     fluid_velocity: Optional[float] = None,
     roughness: Optional[float] = 0.0,
+    strict: bool = False,
 ) -> str:
     """Calculates convective heat transfer coefficient for various geometries and flow conditions.
     
@@ -46,6 +47,7 @@ def calculate_convection_coefficient(
         flow_type: Flow regime ('natural' or 'forced')
         fluid_velocity: Fluid velocity in m/s (required for 'forced' flow)
         roughness: Surface roughness in meters (relevant for internal pipe flow)
+        strict: If True, require ht library and fail if correlations are not available
         
     Returns:
         JSON string with the calculated convection coefficient and related parameters
@@ -61,7 +63,7 @@ def calculate_convection_coefficient(
         film_temperature = (bulk_fluid_temperature + surface_temperature) / 2.0
         
         # Get fluid properties at film temperature
-        fluid_props_json = get_fluid_properties(fluid_name, film_temperature, pressure)
+        fluid_props_json = get_fluid_properties(fluid_name, film_temperature, pressure, strict=strict)
         fluid_props = json.loads(fluid_props_json)
         
         if "error" in fluid_props:
@@ -101,6 +103,9 @@ def calculate_convection_coefficient(
         nusselt_number = None
         convection_coefficient = None
         
+        if strict and not HT_AVAILABLE:
+            raise ImportError("ht library required with strict=True")
+            
         if HT_AVAILABLE:
             import ht
             
@@ -111,8 +116,11 @@ def calculate_convection_coefficient(
                     try:
                         from ht.conv_external import Nu_external_horizontal_plate
                         nusselt_number = Nu_external_horizontal_plate(reynolds_number, prandtl_number)
-                    except (ImportError, AttributeError):
+                    except (ImportError, AttributeError, TypeError, ValueError) as e:
+                        if strict:
+                            raise
                         # Fallback to manual correlation if ht function not available
+                        logger.warning(f"ht function failed, using fallback: {e}")
                         if reynolds_number < 5e5:  # Laminar
                             nusselt_number = 0.664 * math.sqrt(reynolds_number) * prandtl_number**(1/3)
                         else:  # Turbulent
@@ -125,8 +133,11 @@ def calculate_convection_coefficient(
                         # Calculate relative roughness (e/D)
                         eD = roughness / characteristic_dimension if roughness else 0.0
                         nusselt_number = Nu_conv_internal(reynolds_number, prandtl_number, eD=eD)
-                    except (ImportError, AttributeError):
+                    except (ImportError, AttributeError, TypeError, ValueError) as e:
+                        if strict:
+                            raise
                         # Fallback to manual correlations
+                        logger.warning(f"ht function failed, using fallback: {e}")
                         if reynolds_number < 2300:  # Laminar
                             nusselt_number = 3.66  # For constant surface temperature
                         elif reynolds_number > 10000:  # Fully turbulent
@@ -144,8 +155,11 @@ def calculate_convection_coefficient(
                         try:
                             from ht.conv_external import Nu_cylinder_Churchill_Bernstein
                             nusselt_number = Nu_cylinder_Churchill_Bernstein(reynolds_number, prandtl_number)
-                        except (ImportError, AttributeError):
+                        except (ImportError, AttributeError, TypeError, ValueError) as e:
+                            if strict:
+                                raise
                             # Fallback to manual Churchill and Bernstein correlation
+                            logger.warning(f"ht function failed, using fallback: {e}")
                             nusselt_number = 0.3 + (0.62 * math.sqrt(reynolds_number) * prandtl_number**(1/3) *
                                               (1 + (reynolds_number/282000)**(5/8))**(4/5)) / \
                                               (1 + (0.4/prandtl_number)**(2/3))**(1/4)
@@ -161,7 +175,10 @@ def calculate_convection_coefficient(
                             grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
                             
                             nusselt_number = Nu_horizontal_cylinder(prandtl_number, grashof)
-                        except (ImportError, AttributeError):
+                        except (ImportError, AttributeError, TypeError, ValueError) as e:
+                            if strict:
+                                raise
+                            logger.warning(f"ht function failed, using fallback: {e}")
                             # Fallback to manual calculation
                             g = 9.81  # m/s²
                             beta = 1.0 / film_temperature  # Thermal expansion coefficient (approximation)
@@ -204,7 +221,10 @@ def calculate_convection_coefficient(
                         grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
                         
                         nusselt_number = Nu_free_vertical_plate(prandtl_number, grashof)
-                    except (ImportError, AttributeError):
+                    except (ImportError, AttributeError, TypeError, ValueError) as e:
+                        if strict:
+                            raise
+                        logger.warning(f"ht function failed, using fallback: {e}")
                         # Fallback to manual correlation
                         g = 9.81
                         beta = 1.0 / film_temperature
@@ -253,12 +273,16 @@ def calculate_convection_coefficient(
                             nusselt_number = 0.5 * rayleigh**(1/4)
                 
             except Exception as ht_error:
+                if strict:
+                    raise
                 logger.warning(f"Error using HT library correlations: {ht_error}")
                 # Fall back to basic correlations
                 nusselt_number = None
         
         # If no nusselt_number was calculated using HT, use fallback correlations
         if nusselt_number is None:
+            if strict:
+                raise ValueError("Could not calculate Nusselt number with strict=True")
             if flow_type.lower() == 'forced':
                 if 'pipe_internal' in geometry_lower:
                     # Basic Dittus-Boelter

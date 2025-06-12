@@ -157,7 +157,7 @@ def kg_per_s_to_lb_per_hr(flow_kg_s: float) -> float:
     return convert_units(flow_kg_s, 'kg/s', 'pound/hour')
 
 # Utility function to parse and convert user input
-def parse_and_convert(value_str: str, target_unit: str, param_type: Optional[str] = None, fluid_density: Optional[float] = None) -> float:
+def parse_and_convert(value_str: Union[str, float, int], target_unit: str, param_type: Optional[str] = None, fluid_density: Optional[float] = None) -> float:
     """Parse a value with optional unit and convert to target unit.
     
     Args:
@@ -175,6 +175,11 @@ def parse_and_convert(value_str: str, target_unit: str, param_type: Optional[str
         >>> parse_and_convert("100", "meter", param_type="length")  # Assumes feet for length
         30.48
     """
+    # Handle numeric input
+    if isinstance(value_str, (int, float)):
+        # Numeric values are assumed to be in SI units already
+        return float(value_str)
+    
     # Try to parse as "value unit" format
     parts = value_str.strip().split(maxsplit=1)
     

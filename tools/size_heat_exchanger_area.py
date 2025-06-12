@@ -41,6 +41,7 @@ def size_heat_exchanger_area(
     tube_roughness: float = 0.0,
     hx_length_per_pass: Optional[float] = None,
     shell_geometry_params: Optional[Dict[str, Any]] = None,
+    strict: bool = False,
 ) -> str:
     """Calculates required HX Area, U, LMTD based on Q and fluid conditions.
     
@@ -93,7 +94,7 @@ def size_heat_exchanger_area(
         
         # 1. Determine all four temperatures
         # Get fluid properties for specific heat calculation
-        hot_fluid_props_json = get_fluid_properties(hot_fluid_name, hot_fluid_inlet_temp, hot_fluid_pressure)
+        hot_fluid_props_json = get_fluid_properties(hot_fluid_name, hot_fluid_inlet_temp, hot_fluid_pressure, strict=strict)
         hot_fluid_props = json.loads(hot_fluid_props_json)
         
         if "error" in hot_fluid_props:
@@ -101,7 +102,7 @@ def size_heat_exchanger_area(
                 "error": f"Failed to get hot fluid properties: {hot_fluid_props['error']}"
             })
             
-        cold_fluid_props_json = get_fluid_properties(cold_fluid_name, cold_fluid_inlet_temp, cold_fluid_pressure)
+        cold_fluid_props_json = get_fluid_properties(cold_fluid_name, cold_fluid_inlet_temp, cold_fluid_pressure, strict=strict)
         cold_fluid_props = json.loads(cold_fluid_props_json)
         
         if "error" in cold_fluid_props:
@@ -223,7 +224,7 @@ def size_heat_exchanger_area(
             tube_wall_temp_est = (tube_fluid_bulk_temp + hot_fluid_bulk_temp) / 2.0
             
             # Calculate velocity if possible
-            tube_fluid_props = json.loads(get_fluid_properties(tube_fluid_name, tube_fluid_bulk_temp, tube_fluid_pressure))
+            tube_fluid_props = json.loads(get_fluid_properties(tube_fluid_name, tube_fluid_bulk_temp, tube_fluid_pressure, strict=strict))
             tube_fluid_density = tube_fluid_props.get("density")
             
             if tube_fluid_density is None:
@@ -242,9 +243,10 @@ def size_heat_exchanger_area(
                 bulk_fluid_temperature=tube_fluid_bulk_temp,
                 surface_temperature=tube_wall_temp_est,
                 pressure=tube_fluid_pressure,
+                flow_type='forced',
                 fluid_velocity=tube_fluid_velocity,
                 roughness=tube_roughness,
-                pipe_length=hx_length_per_pass
+                strict=strict
             )
             
             tube_side_h_result = json.loads(tube_side_h_json)
@@ -325,7 +327,7 @@ def size_heat_exchanger_area(
             
         # Calculate U based on outer area (Ao)
         term1 = tube_outer_diameter / (tube_inner_diameter * tube_side_h) if tube_inner_diameter * tube_side_h != 0 else float('inf')
-        term2 = tube_outer_diameter * fouling_factor_inner / tube_inner_diameter if tube_inner_diameter != 0 else float('inf')
+        term2 = fouling_factor_inner * tube_outer_diameter / tube_inner_diameter if tube_inner_diameter != 0 else float('inf')  # scale Rfi
         term3 = tube_outer_diameter * math.log(tube_outer_diameter / tube_inner_diameter) / (2.0 * tube_material_conductivity) if tube_material_conductivity != 0 and tube_inner_diameter != 0 else float('inf')
         term4 = fouling_factor_outer
         term5 = 1.0 / shell_side_h if shell_side_h != 0 else float('inf')

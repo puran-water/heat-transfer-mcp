@@ -11,7 +11,14 @@
       "Bash(git pull:*)",
       "Bash(git stash:*)",
       "Bash(git add:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(black:*)",
+      "Bash(find:*)",
+      "mcp__sequential-thinking__sequentialthinking",
+      "mcp__github__get_file_contents",
+      "mcp__github__search_repositories",
+      "WebFetch(domain:ht.readthedocs.io)",
+      "Bash(grep:*)"
     ]
   },
   "enableAllProjectMcpServers": false

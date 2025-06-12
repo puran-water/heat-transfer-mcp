@@ -27,6 +27,7 @@ def calculate_hx_shell_side_h_kern(
     shell_fluid_bulk_temp: float,
     shell_fluid_pressure: float = 101325.0,
     tube_wall_temp: Optional[float] = None,
+    strict: bool = False,
 ) -> str:
     """Estimates shell-side h using Kern's method.
     
@@ -49,15 +50,19 @@ def calculate_hx_shell_side_h_kern(
     try:
         # Parameter validation
         if not (0 < baffle_cut_percent < 50):
-            logger.warning(f"Baffle cut ({baffle_cut_percent}%) is outside typical range (15-45%). "
-                          f"Kern's method may be inaccurate.")
+            warning_msg = f"Baffle cut ({baffle_cut_percent}%) is outside typical range (15-45%). Kern's method may be inaccurate."
+            if strict:
+                raise ValueError(warning_msg)
+            logger.warning(warning_msg)
         
         if baffle_spacing > shell_inner_diameter or baffle_spacing < shell_inner_diameter / 5.0:
-            logger.warning(f"Baffle spacing ({baffle_spacing:.3f}m) is outside typical range (Ds/5 to Ds). "
-                          f"Kern's method may be inaccurate.")
+            warning_msg = f"Baffle spacing ({baffle_spacing:.3f}m) is outside typical range (Ds/5 to Ds). Kern's method may be inaccurate."
+            if strict:
+                raise ValueError(warning_msg)
+            logger.warning(warning_msg)
 
         # 1. Get Shell Fluid Properties at Bulk Temp
-        bulk_props_json = get_fluid_properties(shell_fluid_name, shell_fluid_bulk_temp, shell_fluid_pressure)
+        bulk_props_json = get_fluid_properties(shell_fluid_name, shell_fluid_bulk_temp, shell_fluid_pressure, strict=strict)
         bulk_props = json.loads(bulk_props_json)
         
         if "error" in bulk_props:
@@ -97,10 +102,34 @@ def calculate_hx_shell_side_h_kern(
         Re_s = De * Gs / mu_b if mu_b > 0 else 0
 
         # 6. Calculate Nusselt number using Kern correlation
-        # Using approximate correlation: Nu = C * Re^n * Pr^(1/3)
-        C_kern, n_kern = 0.36, 0.55  # Kern method constants
-        Nu_s = C_kern * (Re_s**n_kern) * (Pr_b**(1.0/3.0)) if Re_s > 0 else 0
-        correlation_used = f"Kern Approx Nu = {C_kern:.3f}*Re^{n_kern:.3f}*Pr^(1/3)"
+        # WARNING: C_kern=0.36, n_kern=0.55 is only valid for single-segmental baffles with 25% cut
+        if baffle_cut_percent != 25.0:
+            warning_msg = f"Kern constants (C=0.36, n=0.55) are valid only for 25% baffle cut, but {baffle_cut_percent}% was specified. Results may be inaccurate."
+            if strict:
+                raise ValueError(warning_msg)
+            logger.warning(warning_msg)
+        
+        # Try to use ht library for more accurate shell-side correlation if available
+        Nu_s = None
+        correlation_used = "unknown"
+        
+        if HT_AVAILABLE:
+            try:
+                # Try using ht.hx.shell_side_Nu_Bell which includes baffle corrections
+                from ht.hx import shell_side_Nu_Bell
+                # This is a placeholder - actual implementation would need more geometry details
+                # For now, fall back to Kern method
+                logger.info("ht library available but Bell-Delaware method not implemented yet")
+            except (ImportError, AttributeError, TypeError, ValueError) as e:
+                if strict:
+                    raise
+                logger.warning(f"ht shell-side correlation failed: {e}")
+        
+        # Fall back to Kern method
+        if Nu_s is None:
+            C_kern, n_kern = 0.36, 0.55  # Kern method constants for 25% baffle cut
+            Nu_s = C_kern * (Re_s**n_kern) * (Pr_b**(1.0/3.0)) if Re_s > 0 else 0
+            correlation_used = f"Kern Approx Nu = {C_kern:.3f}*Re^{n_kern:.3f}*Pr^(1/3) (25% baffle cut)"
 
         # 7. Calculate h_o without viscosity correction
         h_o_provisional = Nu_s * k_b / De if De > 0 else 0
@@ -111,7 +140,7 @@ def calculate_hx_shell_side_h_kern(
         
         if tube_wall_temp is not None:
             try:
-                wall_props_json = get_fluid_properties(shell_fluid_name, tube_wall_temp, shell_fluid_pressure)
+                wall_props_json = get_fluid_properties(shell_fluid_name, tube_wall_temp, shell_fluid_pressure, strict=strict)
                 wall_props = json.loads(wall_props_json)
                 
                 if "error" not in wall_props:
