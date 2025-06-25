@@ -85,15 +85,15 @@ The server automatically converts imperial units to SI:
 "35 degC" → 308.15 K
 
 # Flow Rate  
-"200 GPM" → 12.62 kg/s
-"5000 SCFM" → 2.97 kg/s
+"200 GPM" → 12.62 kg/s (assuming water density)
+"5000 SCFM" → 2.97 kg/s (standard air)
 
 # Length
 "10 feet" → 3.048 m
 "12 inches" → 0.3048 m
 
 # Pressure
-"14.7 psi" → 101325 Pa
+"14.7 psi" → 101353 Pa
 "1 bar" → 100000 Pa
 
 # Power
@@ -154,8 +154,7 @@ For use with Claude Desktop, update your configuration:
 
 ## Documentation
 
-- [Setup Guide](SETUP.md) - Installation and configuration instructions
-- [System Prompt Guide](docs/SYSTEM_PROMPT_ENHANCED.md) - Comprehensive usage guide
+- [AI Agent Usage Guide](AI_AGENT_PROMPT.md) - Comprehensive usage guide for AI agents
 - [Tool Parameter Analysis](docs/TOOL_PARAMETER_ANALYSIS.md) - Detailed parameter documentation
 
 ## Requirements

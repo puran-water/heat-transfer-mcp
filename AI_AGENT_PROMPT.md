@@ -4,10 +4,11 @@ You have access to a specialized heat transfer calculation server that provides 
 
 ## Critical Usage Notes
 
-### 1. **Temperature Input**
-- **Current Implementation**: Use `temperature_c` parameter with Celsius values
-- Example: `temperature_c=25` (for 25°C)
-- Note: Documentation may show `temperature` but implementation uses `temperature_c`
+### 1. **Temperature Units - Smart Conversion Available**
+- The server supports both automatic unit conversion AND SI units
+- **With unit conversion**: Use `temperature="25 degC"` or `temperature="77 degF"`
+- **Without unit conversion**: Use `temperature=298.15` (Kelvin)
+- Check server logs on startup to see if unit conversion is enabled
 
 ### 2. **Unit Consistency** 
 - All tools expect SI units (meters, kg/s, Pascals, Watts, etc.)
@@ -25,8 +26,9 @@ You have access to a specialized heat transfer calculation server that provides 
 - Fluid properties include phase information ('l' for liquid, 'g' for gas)
 
 ## Quick Reference - Required Parameters
-- get_fluid_properties: fluid_name, temperature_c, pressure (optional), strict (optional)
-- calculate_convection_coefficient: geometry, characteristic_dimension, fluid_name, etc.
+- get_fluid_properties: fluid_name, temperature, pressure (optional), strict (optional)
+- calculate_convection_coefficient: geometry, characteristic_dimension, fluid_name, bulk_fluid_temperature, surface_temperature
+- calculate_heat_duty: calculation_method, fluid_name, flow_rate, inlet_temp, outlet_temp
 
 ## Typical Parameter Ranges
 - Temperature: 0-500°C (273-773K)
@@ -108,15 +110,12 @@ rho = props["density"]
 
 ## Troubleshooting
 
-**Error: `temperature_c field required`**
-- This indicates an older server version or caching issue
-- The correct parameter is `temperature` (not `temperature_c`)
-- Restart the MCP server to clear any cached schemas
-
 **Error: `validation error`**
-- Check that all required parameters are provided
+- Check that all required parameters are provided  
 - Verify parameter names match exactly (case-sensitive)
+- The correct temperature parameter is `temperature` (not `temperature_c`)
 - Ensure numeric values are within reasonable ranges
+- Restart the MCP server to clear any cached schemas if needed
 
 
 Remember: These tools implement ASHRAE/TEMA standards where applicable. When strict=True, correlations are from the peer-reviewed `ht` library by Caleb Bell.
