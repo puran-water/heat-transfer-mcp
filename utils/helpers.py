@@ -138,25 +138,27 @@ def estimate_sky_temperature(
     Returns:
         Effective sky temperature in K
     """
-    # Simple approximation if dew point not available
+    T_air = ambient_temperature
+    
     if dew_point is None:
-        # Clear sky approximation: T_sky ≈ 0.0552 * T_ambient^1.5
-        t_sky_clear = 0.0552 * (ambient_temperature**1.5)
+        # Swinbank correlation: compute emissivity first
+        eps_clear = 9.37e-6 * (T_air ** 2)  # Clear sky emissivity
     else:
-        # More accurate with dew point: T_sky ≈ T_ambient * (0.711 + 0.0056*T_dp + 0.000073*T_dp² + 0.013*cos(15t))
-        # Where T_dp is dew point in °C and t is the hour of the day/24
-        # Simplified version:
-        dew_point_c = dew_point - DEG_C_to_K if dew_point > 100 else dew_point
-        t_sky_clear = ambient_temperature * (0.711 + 0.0056 * dew_point_c + 0.000073 * dew_point_c**2)
+        # Better formula with dew point
+        Td_C = dew_point - DEG_C_to_K if dew_point > 100 else dew_point
+        eps_clear = 0.711 + 0.0056*Td_C + 0.000073*(Td_C**2)
+        eps_clear = max(0.1, min(1.0, eps_clear))  # Clamp to valid range
     
-    # Adjust for cloud cover if provided
+    # CRITICAL FIX: Use emissivity^0.25, NOT direct multiplication
+    T_sky = T_air * (eps_clear ** 0.25)  # This is the correct formula
+    
+    # Cloud cover adjustment if provided
     if cloud_cover is not None:
-        # With clouds: T_sky = T_ambient * (clear_sky_factor * (1 - cloud_cover) + cloud_cover)
-        clear_sky_factor = t_sky_clear / ambient_temperature
-        t_sky = ambient_temperature * (clear_sky_factor * (1 - cloud_cover) + cloud_cover)
-        return t_sky
+        eps_clouds = eps_clear * (1 + 0.17 * (cloud_cover ** 2))
+        eps_clouds = min(1.0, eps_clouds)
+        T_sky = T_air * (eps_clouds ** 0.25)
     
-    return t_sky_clear
+    return T_sky
 
 def calculate_lmtd(
     t_hot_in: float,

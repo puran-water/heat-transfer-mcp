@@ -32,6 +32,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from utils.import_helpers import METEOSTAT_AVAILABLE, PANDAS_AVAILABLE
 from utils.constants import STEFAN_BOLTZMANN
+from utils.weather_service import get_weather_service
+from utils.helpers import estimate_sky_temperature
 
 # Reuse existing tool functions
 from tools.surface_heat_transfer import calculate_surface_heat_transfer
@@ -169,44 +171,95 @@ def _ambient_from_inputs(
     end_date: Optional[str],
     design_percentile: Optional[float],
     time_resolution: str = "daily",
+    weather_mode: str = "auto",  # New parameter: "auto", "meteostat", "direct"
 ) -> Tuple[AmbientSpec, Optional[Dict[str, Any]]]:
     """Determine ambient conditions from direct values or weather statistics.
 
     Returns AmbientSpec and optional info dict describing the source.
     """
     info: Dict[str, Any] = {}
-    # Direct inputs take precedence
+    
+    # Determine weather mode
+    if weather_mode == "auto":
+        # Use Meteostat if coordinates available
+        if latitude is not None and longitude is not None:
+            weather_mode = "meteostat"
+        else:
+            weather_mode = "direct"
+    
+    # Try to get weather data if coordinates are available (even if direct values provided)
+    weather_data = None
+    dew_point_k = None
+    if weather_mode == "meteostat" and latitude is not None and longitude is not None:
+        try:
+            weather_service = get_weather_service()
+            # Convert dates if provided as strings
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d') if isinstance(start_date, str) and start_date else None
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d') if isinstance(end_date, str) and end_date else None
+            
+            # Get design conditions from weather service
+            weather_data = weather_service.get_design_conditions(
+                lat=float(latitude),
+                lon=float(longitude),
+                start_date=start_dt,
+                end_date=end_dt,
+                percentiles=[design_percentile] if design_percentile else [0.95],
+                time_resolution=time_resolution
+            )
+            
+            # Extract dew point for sky temperature calculation
+            if "concurrent_conditions" in weather_data:
+                dew_point_k = weather_data["concurrent_conditions"].get("dew_point_k")
+        except Exception as e:
+            logger.warning(f"Failed to fetch weather data: {e}")
+            weather_data = None
+    
+    # Hybrid mode - use provided ambient if given, else use fetched
     if ambient_air_temperature is not None and wind_speed is not None:
+        # Direct values provided
+        T_air = float(ambient_air_temperature)
+        
+        # Calculate sky temperature using dew point if available
+        if sky_temperature is None and dew_point_k:
+            sky_temperature = estimate_sky_temperature(T_air, dew_point_k)
+        
         ambient = AmbientSpec(
-            T_air_K=float(ambient_air_temperature),
+            T_air_K=T_air,
             wind_m_s=float(wind_speed),
             T_sky_K=sky_temperature,
             solar_irradiance_W_m2=incident_solar_radiation if include_solar_gain else None,
-            source="direct",
+            source="hybrid" if weather_data else "direct",
         )
-        info["ambient_source"] = "direct"
+        info["ambient_source"] = "hybrid" if weather_data else "direct"
+        if weather_data:
+            info["weather_meta"] = weather_data.get("data_summary", {})
+            info["dew_point_k"] = dew_point_k
+            info["sky_temperature_k"] = sky_temperature
         return ambient, info
-
-    # If location and percentile provided, compute extremes
-    if (
-        latitude is not None
-        and longitude is not None
-        and start_date
-        and end_date
-        and design_percentile is not None
-    ):
-        wx = _percentile_weather(
-            float(latitude), float(longitude), start_date, end_date, float(design_percentile), time_resolution
-        )
-        if wx:
+    
+    # Use fetched weather data if available
+    if weather_data and "design_conditions" in weather_data and design_percentile:
+        # Find the appropriate percentile data
+        percentile_key = f"cold_{int(design_percentile*100)}th"
+        if percentile_key in weather_data["design_conditions"]:
+            design_cond = weather_data["design_conditions"][percentile_key]
+            T_air = design_cond["temp_k"]
+            
+            # Calculate sky temperature using dew point if available
+            if sky_temperature is None and dew_point_k:
+                sky_temperature = estimate_sky_temperature(T_air, dew_point_k)
+            
             ambient = AmbientSpec(
-                T_air_K=wx["T_air_K"],
-                wind_m_s=wx["wind_m_s"],
+                T_air_K=T_air,
+                wind_m_s=design_cond.get("wind_m_s", 2.0),
                 T_sky_K=sky_temperature,
                 solar_irradiance_W_m2=incident_solar_radiation if include_solar_gain else None,
-                source="percentile_weather",
+                source="meteostat",
             )
-            info.update({"ambient_source": "percentile_weather", "weather_meta": wx.get("meta", {})})
+            info["ambient_source"] = "meteostat"
+            info["weather_meta"] = weather_data.get("data_summary", {})
+            info["dew_point_k"] = dew_point_k
+            info["sky_temperature_k"] = sky_temperature
             return ambient, info
 
     # Fallback minimal ambient
@@ -822,33 +875,64 @@ def tank_heat_loss(
         percentile_results = None
         if percentiles and latitude is not None and longitude is not None and start_date and end_date:
             pr_list = []
-            for p in percentiles:
-                wx = _percentile_weather(float(latitude), float(longitude), start_date, end_date, float(p), time_resolution)
-                if not wx:
-                    continue
-                amb_p = AmbientSpec(T_air_K=wx["T_air_K"], wind_m_s=wx["wind_m_s"], T_sky_K=sky_temperature)
-                sd = _run_surface_solver(
-                    geometry=geometry,
-                    dimensions=dimensions,
-                    internal_temperature=contents_temperature,
-                    surface_emissivity=surface_emissivity,
-                    ambient=amb_p,
-                    fluid_name_internal=fluid_name_internal,
-                    fluid_name_external=fluid_name_external,
-                    wall_layers=base_layers,
-                    overall_heat_transfer_coefficient_U=None,
+            try:
+                # Fetch weather data once for all percentiles
+                weather_service = get_weather_service()
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d') if isinstance(start_date, str) else start_date
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d') if isinstance(end_date, str) else end_date
+                
+                weather_data = weather_service.get_design_conditions(
+                    lat=float(latitude),
+                    lon=float(longitude),
+                    start_date=start_dt,
+                    end_date=end_dt,
+                    percentiles=percentiles,
+                    time_resolution=time_resolution
                 )
-                if "error" in sd:
-                    pr_list.append({"percentile": p, "error": sd["error"]})
-                else:
-                    pr_list.append({
-                        "percentile": p,
-                        "ambient": {"T_air_K": amb_p.T_air_K, "wind_m_s": amb_p.wind_m_s},
-                        "heat_loss_w": sd.get("total_heat_rate_loss_w"),
-                        "surface_temp_K": sd.get("estimated_outer_surface_temp_k"),
-                    })
+                
+                if weather_data and "design_conditions" in weather_data:
+                    for p in percentiles:
+                        percentile_key = f"cold_{int(p*100)}th"
+                        if percentile_key not in weather_data["design_conditions"]:
+                            continue
+                        
+                        design_cond = weather_data["design_conditions"][percentile_key]
+                        amb_p = AmbientSpec(
+                            T_air_K=design_cond["temp_k"],
+                            wind_m_s=design_cond.get("wind_m_s", 2.0),
+                            T_sky_K=sky_temperature
+                        )
+                        
+                        sd = _run_surface_solver(
+                            geometry=geometry,
+                            dimensions=dimensions,
+                            internal_temperature=contents_temperature,
+                            surface_emissivity=surface_emissivity,
+                            ambient=amb_p,
+                            fluid_name_internal=fluid_name_internal,
+                            fluid_name_external=fluid_name_external,
+                            wall_layers=base_layers,
+                            overall_heat_transfer_coefficient_U=None,
+                        )
+                        if "error" in sd:
+                            pr_list.append({"percentile": p, "error": sd["error"]})
+                        else:
+                            pr_list.append({
+                                "percentile": p,
+                                "ambient": {"T_air_K": amb_p.T_air_K, "wind_m_s": amb_p.wind_m_s},
+                                "heat_loss_w": sd.get("total_heat_rate_loss_w"),
+                                "surface_temp_K": sd.get("estimated_outer_surface_temp_k"),
+                            })
+            except Exception as e:
+                logger.warning(f"Percentile analysis failed: {e}")
+            
             percentile_results = pr_list if pr_list else None
 
+        # Extract transparency fields from surface_data
+        sky_temp_k = surface_data.get("sky_temperature_k", ambient.T_sky_K)
+        radiation_model = surface_data.get("radiation_model", {})
+        warnings = surface_data.get("warnings", [])
+        
         result = {
             "total_heat_loss_w": total_Q,
             "sign_convention": "Positive = heat loss to ambient; Negative = heat gain from ambient",
@@ -865,6 +949,13 @@ def tank_heat_loss(
             "ground_details": ground_info.get("ground_details"),
             "ambient": ambient.__dict__,
             "ambient_info": ambient_info,
+            "weather_data": {
+                "source": ambient_info.get("ambient_source", "unknown"),
+                "meta": ambient_info.get("weather_meta", {}),
+                "dew_point_k": ambient_info.get("dew_point_k"),
+                "sky_temperature_k": ambient_info.get("sky_temperature_k", sky_temp_k),
+            },
+            "radiation_model": radiation_model,
             "calculation_methods": {
                 "surface": "Iterative balance using convection + radiation (Newtown-like with damping)",
                 "external_convection": "ht correlations via tools.convection_coefficient",
@@ -886,6 +977,7 @@ def tank_heat_loss(
             },
             "headspace_info": surface_data.get('headspace_info'),
             "percentile_analysis": percentile_results,
+            "warnings": warnings,
         }
 
         return json.dumps(result)

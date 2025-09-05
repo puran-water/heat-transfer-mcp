@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from utils.import_helpers import METEOSTAT_AVAILABLE, PANDAS_AVAILABLE
+from utils.weather_service import get_weather_service
 from utils.validation import (
     ValidationError,
     validate_lat_lon,
@@ -111,9 +112,13 @@ def extreme_conditions(
 
         out: Dict[str, Any] = {
             "location": {"latitude": latitude, "longitude": longitude, "name": location_name},
-            "time_resolution": time_resolution,
-            "date_range": {"start": start_date, "end": end_date},
-            "columns": list(ds.columns),
+            "data_summary": {
+                "source": "meteostat",
+                "time_resolution": time_resolution,
+                "date_range": {"start": start_date, "end": end_date},
+                "data_points": len(ds),
+                "available_metrics": [col for col in ['tmin', 'tavg', 'tmax', 'wspd', 'rhum', 'tdew', 'tsun'] if col in ds.columns],
+            },
             "percentiles": {},
         }
 

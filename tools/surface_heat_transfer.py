@@ -40,6 +40,9 @@ def calculate_surface_heat_transfer(
     surface_absorptivity: float = 0.8,
     sky_temperature: Optional[float] = None,
     internal_convection_coefficient_h_override: Optional[float] = None,
+    view_factor_sky_vertical: float = 0.5,  # Vertical walls see 50% sky
+    view_factor_sky_horizontal: float = 1.0,  # Roof sees 100% sky
+    ground_temperature: Optional[float] = None,  # Default to ambient
 ) -> str:
     """Calculates net heat loss/gain from an external surface considering convection and radiation.
     
@@ -77,6 +80,8 @@ def calculate_surface_heat_transfer(
     try:
         # 1. Calculate Surface Area
         outer_surface_area = 0.0
+        lateral_area = 0.0
+        top_area = 0.0
         geometry_lower = geometry.lower()
         diameter = dimensions.get('diameter')
         height = dimensions.get('height')
@@ -87,8 +92,8 @@ def calculate_surface_heat_transfer(
             if 'vertical' in geometry_lower:
                 # Vertical cylinder tanks: walls + top cap only (bottom is ground-contact)
                 lateral_area = math.pi * diameter * height
-                top_cap_area = math.pi * (diameter/2)**2
-                outer_surface_area = lateral_area + top_cap_area
+                top_area = math.pi * (diameter/2)**2
+                outer_surface_area = lateral_area + top_area
             elif 'horizontal' in geometry_lower:
                 # Horizontal cylinder
                 outer_surface_area = math.pi * diameter * length + 2 * math.pi * (diameter/2)**2
@@ -243,9 +248,32 @@ def calculate_surface_heat_transfer(
             
             # Heat flow FROM outer surface TO ambient
             Q_conv_out = h_outer * outer_surface_area * (Ts_outer_K_guess - T_ambient_K)
-            Q_rad_out = calculate_radiation_heat_transfer(
-                surface_emissivity, outer_surface_area, Ts_outer_K_guess, T_sky_K
-            )
+            
+            # Calculate effective radiation temperature with view factors
+            T_ground_K = ground_temperature if ground_temperature is not None else T_ambient_K
+            
+            if 'vertical' in geometry_lower and 'cylinder' in geometry_lower and lateral_area > 0 and top_area > 0:
+                # Separate areas for different view factors
+                # Effective temps for each surface
+                T_eff4_lateral = (view_factor_sky_vertical * T_sky_K**4 + 
+                                 (1-view_factor_sky_vertical) * T_ground_K**4)
+                T_eff4_top = (view_factor_sky_horizontal * T_sky_K**4 + 
+                             (1-view_factor_sky_horizontal) * T_ground_K**4)
+                
+                # Combined radiation
+                Q_rad_lateral = surface_emissivity * STEFAN_BOLTZMANN * lateral_area * (Ts_outer_K_guess**4 - T_eff4_lateral)
+                Q_rad_top = surface_emissivity * STEFAN_BOLTZMANN * top_area * (Ts_outer_K_guess**4 - T_eff4_top)
+                Q_rad_out = Q_rad_lateral + Q_rad_top
+                
+                # Store effective temperature for reporting
+                T_eff4_combined = (lateral_area * T_eff4_lateral + top_area * T_eff4_top) / outer_surface_area
+                T_eff_radiation = T_eff4_combined ** 0.25
+            else:
+                # Simple case - single view factor
+                view_factor_sky = view_factor_sky_horizontal if 'horizontal' in geometry_lower else view_factor_sky_vertical
+                T_eff4 = view_factor_sky * T_sky_K**4 + (1-view_factor_sky) * T_ground_K**4
+                T_eff_radiation = T_eff4 ** 0.25
+                Q_rad_out = surface_emissivity * STEFAN_BOLTZMANN * outer_surface_area * (Ts_outer_K_guess**4 - T_eff4)
             
             # Solar gain if included
             Q_solar_in = incident_solar_radiation * surface_absorptivity * outer_surface_area if include_solar_gain else 0.0
@@ -270,8 +298,11 @@ def calculate_surface_heat_transfer(
             # Approximate derivatives for Newton's method
             dQ_cond_dTs = -outer_surface_area / R_internal_plus_wall
             
-            # Linearize radiation for stability
-            T_mean_rad = 0.5 * (Ts_outer_K_guess + T_sky_K)
+            # Linearize radiation for stability with view factors
+            if 'T_eff_radiation' in locals():
+                T_mean_rad = 0.5 * (Ts_outer_K_guess + T_eff_radiation)
+            else:
+                T_mean_rad = 0.5 * (Ts_outer_K_guess + T_sky_K)
             h_rad_linear = 4 * surface_emissivity * STEFAN_BOLTZMANN * T_mean_rad**3
             
             dQ_out_dTs = h_outer * outer_surface_area + h_rad_linear * outer_surface_area
@@ -302,13 +333,29 @@ def calculate_surface_heat_transfer(
         Ts_outer_final = Ts_outer_K_guess
         Q_cond_final = (T_internal_K - Ts_outer_final) / (R_internal_plus_wall / outer_surface_area)
         Q_conv_final = h_outer * outer_surface_area * (Ts_outer_final - T_ambient_K)
-        Q_rad_final = calculate_radiation_heat_transfer(
-            surface_emissivity, outer_surface_area, Ts_outer_final, T_sky_K
-        )
+        
+        # Recalculate radiation with view factors for final result
+        T_ground_K = ground_temperature if ground_temperature is not None else T_ambient_K
+        if 'vertical' in geometry_lower and 'cylinder' in geometry_lower and lateral_area > 0 and top_area > 0:
+            T_eff4_lateral = (view_factor_sky_vertical * T_sky_K**4 + 
+                             (1-view_factor_sky_vertical) * T_ground_K**4)
+            T_eff4_top = (view_factor_sky_horizontal * T_sky_K**4 + 
+                         (1-view_factor_sky_horizontal) * T_ground_K**4)
+            Q_rad_lateral = surface_emissivity * STEFAN_BOLTZMANN * lateral_area * (Ts_outer_final**4 - T_eff4_lateral)
+            Q_rad_top = surface_emissivity * STEFAN_BOLTZMANN * top_area * (Ts_outer_final**4 - T_eff4_top)
+            Q_rad_final = Q_rad_lateral + Q_rad_top
+            T_eff4_combined = (lateral_area * T_eff4_lateral + top_area * T_eff4_top) / outer_surface_area
+            T_eff_radiation_final = T_eff4_combined ** 0.25
+        else:
+            view_factor_sky = view_factor_sky_horizontal if 'horizontal' in geometry_lower else view_factor_sky_vertical
+            T_eff4 = view_factor_sky * T_sky_K**4 + (1-view_factor_sky) * T_ground_K**4
+            T_eff_radiation_final = T_eff4 ** 0.25
+            Q_rad_final = surface_emissivity * STEFAN_BOLTZMANN * outer_surface_area * (Ts_outer_final**4 - T_eff4)
+        
         Q_solar_final = incident_solar_radiation * surface_absorptivity * outer_surface_area if include_solar_gain else 0.0
         Q_total_final = Q_conv_final + Q_rad_final - Q_solar_final
         
-        # Create result
+        # Create result with transparency fields
         converged = i < max_iterations - 1
         result = {
             "total_heat_rate_loss_w": Q_total_final,
@@ -325,10 +372,26 @@ def calculate_surface_heat_transfer(
             "converged": converged,
             "iterations_required": i + 1,
             "sky_temperature_k": T_sky_K,
+            "ground_temperature_k": T_ground_K,
+            "radiation_model": {
+                "view_factors": {
+                    "sky_vertical": view_factor_sky_vertical,
+                    "sky_horizontal": view_factor_sky_horizontal,
+                    "ground_vertical": 1.0 - view_factor_sky_vertical,
+                    "ground_horizontal": 1.0 - view_factor_sky_horizontal
+                },
+                "effective_env_temp_k": T_eff_radiation_final if 'T_eff_radiation_final' in locals() else T_sky_K
+            },
             "iteration_log": result_log[-5:] if len(result_log) > 5 else result_log  # Show last 5 iterations
         }
+        # Add warnings
+        warnings = []
         if not converged:
-            result["warning"] = f"Surface temperature solver did not converge within {max_iterations} iterations. Results may be approximate."
+            warnings.append(f"Surface temperature solver did not converge within {max_iterations} iterations. Results may be approximate.")
+        if Ts_outer_final < T_ambient_K:
+            warnings.append(f"Surface temperature ({Ts_outer_final-273.15:.1f}°C) is colder than ambient ({T_ambient_K-273.15:.1f}°C) due to radiative cooling")
+        if warnings:
+            result["warnings"] = warnings
         
         return json.dumps(result)
         
