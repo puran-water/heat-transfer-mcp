@@ -12,14 +12,54 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 
 logger = logging.getLogger("heat-transfer-mcp.imports")
 
-# HT availability check
+"""Optional dependency detection and conservative fallbacks.
+
+This module centralizes availability checks for optional scientific
+dependencies and provides basic fallbacks where strictly necessary.
+
+Notes:
+- Avoid gating one library's usage behind another (e.g., don't gate
+  thermo usage on ht being available). Each flag reflects the actual
+  library presence so tools can choose the best available modeling.
+"""
+
+# Library availability flags (kept lightweight to avoid import side‑effects)
 HT_AVAILABLE = False
+THERMO_AVAILABLE = False
+FLUIDS_AVAILABLE = False
+CHEMICALS_AVAILABLE = False
+
+# Heat transfer correlations library
 try:
-    import ht
+    import ht  # noqa: F401
     HT_AVAILABLE = True
     logger.info("Heat transfer (ht) library successfully imported")
 except ImportError:
-    logger.warning("Heat transfer (ht) library not available. Heat transfer calculations will be limited.")
+    logger.warning("Heat transfer (ht) library not available. Some correlations will fall back.")
+
+# Thermophysical properties library
+try:
+    import thermo  # noqa: F401
+    THERMO_AVAILABLE = True
+    logger.info("Thermo library successfully imported")
+except ImportError:
+    logger.warning("Thermo library not available. Property calculations will be limited.")
+
+# Fluid mechanics helpers library
+try:
+    import fluids  # noqa: F401
+    FLUIDS_AVAILABLE = True
+    logger.info("Fluids library successfully imported")
+except ImportError:
+    logger.warning("Fluids library not available. Some flow utilities will be limited.")
+
+# Chemicals property backend used by thermo
+try:
+    import chemicals  # noqa: F401
+    CHEMICALS_AVAILABLE = True
+    logger.info("Chemicals library successfully imported")
+except ImportError:
+    logger.warning("Chemicals library not available. Some property methods may be missing.")
 
 # Meteostat availability check
 METEOSTAT_AVAILABLE = False
@@ -72,30 +112,23 @@ def get_fluid_properties_fallback(
             "prandtl_number": 7.0
         }
     elif "air" in fluid_name_lower:
-        # Temperature-dependent approximation for air using ideal gas law
-        # P = ρRT where R = 287 J/(kg·K) for air
-        R_air = 287.0  # Specific gas constant for air
+        # Simple but reasonable air estimate if thermo is not available.
+        # Use ideal-gas density and Sutherland-like temperature scalings.
+        R_air = 287.0  # J/(kg·K)
         density = pressure_pa / (R_air * temperature_k)
-        
-        # Rough temperature corrections for other properties
-        T_ref = 293.15  # 20°C reference
-        mu_ref = 1.8e-5
+        T_ref = 293.15
+        mu_ref = 1.81e-5
         k_ref = 0.026
-        
-        # Sutherland's approximation for viscosity
-        mu = mu_ref * (temperature_k / T_ref) ** 1.5 * (T_ref + 110) / (temperature_k + 110)
-        
-        # Thermal conductivity increases with temperature
+        mu = mu_ref * (temperature_k / T_ref) ** 1.5 * (T_ref + 110.4) / (temperature_k + 110.4)
         k = k_ref * (temperature_k / T_ref) ** 0.8
-        
         return {
             "name": "Air",
-            "density": density,  # kg/m³
-            "specific_heat_cp": 1005.0,  # J/(kg·K) - relatively constant
-            "thermal_conductivity": k,  # W/(m·K)
-            "dynamic_viscosity": mu,  # Pa·s
-            "kinematic_viscosity": mu / density,  # m²/s
-            "prandtl_number": 0.7  # Relatively constant for air
+            "density": density,
+            "specific_heat_cp": 1007.0,
+            "thermal_conductivity": k,
+            "dynamic_viscosity": mu,
+            "kinematic_viscosity": mu / density,
+            "prandtl_number": 0.71,
         }
     else:
         logger.warning(f"Fluid '{fluid_name}' not recognized in fallback properties.")

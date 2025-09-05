@@ -18,8 +18,31 @@
       "mcp__github__get_file_contents",
       "mcp__github__search_repositories",
       "WebFetch(domain:ht.readthedocs.io)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Read(//mnt/c/Users/hvksh/mcp-servers/fluids-mcp/**)",
+      "mcp__heat-transfer-mcp__get_ambient_conditions",
+      "mcp__heat-transfer-mcp__get_fluid_properties",
+      "mcp__heat-transfer-mcp__get_material_properties",
+      "mcp__heat-transfer-mcp__calculate_convection_coefficient",
+      "mcp__heat-transfer-mcp__calculate_overall_heat_transfer_coefficient",
+      "mcp__heat-transfer-mcp__calculate_surface_heat_transfer",
+      "mcp__heat-transfer-mcp__calculate_heat_exchanger_performance",
+      "mcp__heat-transfer-mcp__calculate_heat_duty",
+      "mcp__heat-transfer-mcp__calculate_solar_radiation_on_surface",
+      "mcp__heat-transfer-mcp__calculate_ground_heat_loss",
+      "mcp__heat-transfer-mcp__calculate_buried_object_heat_loss",
+      "mcp__heat-transfer-mcp__calculate_hx_shell_side_h_kern",
+      "mcp__heat-transfer-mcp__size_heat_exchanger_area",
+      "mcp__heat-transfer-mcp__estimate_hx_physical_dims",
+      "mcp__heat-transfer-mcp__tank_heat_loss",
+      "mcp__heat-transfer-mcp__extreme_conditions",
+      "mcp__heat-transfer-mcp__heat_exchanger_design",
+      "mcp__heat-transfer-mcp__pipe_heat_management",
+      "mcp__heat-transfer-mcp__parameter_optimization"
     ]
   },
-  "enableAllProjectMcpServers": false
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "heat-transfer-mcp"
+  ]
 }

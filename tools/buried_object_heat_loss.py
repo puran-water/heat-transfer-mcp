@@ -39,15 +39,62 @@ def calculate_buried_object_heat_loss(
     """
     try:
         # Validate required inputs
-        if object_type.lower() == 'pipe' and length is None:
+        if object_type is None or not isinstance(object_type, str) or not object_type.strip():
+            return json.dumps({
+                "error": "object_type must be a non-empty string ('pipe' or 'sphere')."
+            })
+        obj_type_lower = object_type.lower()
+        if obj_type_lower not in {"pipe", "sphere"}:
+            return json.dumps({
+                "error": f"Unsupported object_type: {object_type}. Use 'pipe' or 'sphere'."
+            })
+        if obj_type_lower == 'pipe' and length is None:
             return json.dumps({
                 "error": "Length is required for object_type 'pipe'."
             })
-            
-        if diameter <= 0 or burial_depth <= 0 or soil_conductivity <= 0:
+        try:
+            diameter = float(diameter)
+            burial_depth = float(burial_depth) if burial_depth is not None else None
+            soil_conductivity = float(soil_conductivity)
+            if obj_type_lower == 'pipe' and length is not None:
+                length = float(length)
+        except (TypeError, ValueError):
             return json.dumps({
-                "error": "Diameter, burial_depth, and soil_conductivity must be positive."
+                "error": "diameter, burial_depth, soil_conductivity (and length for pipe) must be numeric values."
             })
+        if burial_depth is None:
+            return json.dumps({
+                "error": "burial_depth is required."
+            })
+        if diameter <= 0.0:
+            return json.dumps({
+                "error": "diameter must be positive."
+            })
+        if soil_conductivity <= 0.0:
+            return json.dumps({
+                "error": "soil_conductivity must be positive."
+            })
+        if burial_depth < 0.0:
+            return json.dumps({
+                "error": "burial_depth cannot be negative."
+            })
+        # Validate temperatures
+        try:
+            object_temperature = float(object_temperature)
+            ground_surface_temperature = float(ground_surface_temperature)
+        except (TypeError, ValueError):
+            return json.dumps({
+                "error": "object_temperature and ground_surface_temperature must be numeric values in Kelvin."
+            })
+        for T_val, label in [(object_temperature, 'object_temperature'), (ground_surface_temperature, 'ground_surface_temperature')]:
+            if not math.isfinite(T_val):
+                return json.dumps({
+                    "error": f"{label} must be a finite real number."
+                })
+            if T_val < 0.0:
+                return json.dumps({
+                    "error": f"{label} cannot be below 0 K (absolute zero)."
+                })
             
         if burial_depth < diameter / 2.0:
             logger.warning("Burial depth is less than object radius. Object is not fully buried. Results may be inaccurate.")
@@ -57,7 +104,7 @@ def calculate_buried_object_heat_loss(
         deltaT = object_temperature - ground_surface_temperature
         method_used = f"Shape Factor ({object_type})"
 
-        if object_type.lower() == 'pipe':
+        if obj_type_lower == 'pipe':
             # Shape factor per unit length for pipe buried in semi-infinite medium
             # Formula: S_per_L = 2 * pi / arccosh(2*z/D)
             # where z = burial_depth, D = diameter
@@ -72,7 +119,7 @@ def calculate_buried_object_heat_loss(
                     "error": "Cannot calculate shape factor: burial depth must be greater than radius (2*z/D > 1)."
                 })
 
-        elif object_type.lower() == 'sphere':
+        elif obj_type_lower == 'sphere':
             # Shape factor for sphere buried in semi-infinite medium
             # S = 4 * pi * r / (1 - r / (2*z))
             # where r = D/2, z = burial_depth

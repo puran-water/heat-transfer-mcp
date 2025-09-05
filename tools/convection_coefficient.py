@@ -33,6 +33,7 @@ def calculate_convection_coefficient(
     flow_type: str = "forced",
     fluid_velocity: Optional[float] = None,
     roughness: Optional[float] = 0.0,
+    pipe_length: Optional[float] = None,
     strict: bool = False,
 ) -> str:
     """Calculates convective heat transfer coefficient for various geometries and flow conditions.
@@ -52,13 +53,87 @@ def calculate_convection_coefficient(
     Returns:
         JSON string with the calculated convection coefficient and related parameters
     """
-    # Check required parameters based on flow type
-    if flow_type.lower() == 'forced' and fluid_velocity is None:
-        return json.dumps({
-            "error": "Fluid velocity is required for forced convection calculations."
-        })
-    
+    # Validate inputs to avoid misleading errors and non-physical results
     try:
+        if not isinstance(geometry, str) or not geometry.strip():
+            return json.dumps({
+                "error": "Geometry must be a non-empty string."
+            })
+        geometry_lower = geometry.lower()
+        recognized_keywords = ['flat_plate', 'plate', 'pipe', 'cylinder', 'sphere', 'vertical', 'horizontal', 'wall']
+        if not any(k in geometry_lower for k in recognized_keywords):
+            return json.dumps({
+                "error": f"Unsupported geometry: {geometry}."
+            })
+        if flow_type is None or flow_type.lower() not in {"forced", "natural"}:
+            return json.dumps({
+                "error": "flow_type must be 'forced' or 'natural'."
+            })
+        # Characteristic dimension
+        try:
+            characteristic_dimension = float(characteristic_dimension)
+        except (TypeError, ValueError):
+            return json.dumps({
+                "error": "Characteristic dimension must be a numeric value in meters."
+            })
+        if not math.isfinite(characteristic_dimension) or characteristic_dimension <= 0.0:
+            return json.dumps({
+                "error": "Characteristic dimension must be a positive, finite value."
+            })
+        # Forced convection requires a valid velocity
+        if flow_type.lower() == 'forced':
+            if fluid_velocity is None:
+                return json.dumps({
+                    "error": "Fluid velocity is required for forced convection calculations."
+                })
+            try:
+                fluid_velocity = float(fluid_velocity)
+            except (TypeError, ValueError):
+                return json.dumps({
+                    "error": "Fluid velocity must be a numeric value in m/s."
+                })
+            if not math.isfinite(fluid_velocity) or fluid_velocity <= 0.0:
+                return json.dumps({
+                    "error": "Fluid velocity must be a positive, finite value for forced convection."
+                })
+        # Temperatures and pressure
+        try:
+            bulk_fluid_temperature = float(bulk_fluid_temperature)
+            surface_temperature = float(surface_temperature)
+            pressure = float(pressure)
+        except (TypeError, ValueError):
+            return json.dumps({
+                "error": "Temperatures (K) and pressure (Pa) must be numeric values."
+            })
+        for T_val, label in [(bulk_fluid_temperature, 'bulk_fluid_temperature'), (surface_temperature, 'surface_temperature')]:
+            if not math.isfinite(T_val):
+                return json.dumps({
+                    "error": f"{label} must be a finite real number."
+                })
+            if T_val < 0.0:
+                return json.dumps({
+                    "error": f"{label} cannot be below 0 K (absolute zero)."
+                })
+            if T_val > 1.0e4:
+                return json.dumps({
+                    "error": f"{label} is unrealistically high. Please provide < 10000 K."
+                })
+        if not math.isfinite(pressure) or pressure <= 0.0:
+            return json.dumps({
+                "error": "Pressure must be a positive, finite value."
+            })
+        if roughness is not None:
+            try:
+                roughness = float(roughness)
+            except (TypeError, ValueError):
+                return json.dumps({
+                    "error": "Roughness must be a numeric value in meters."
+                })
+            if not math.isfinite(roughness) or roughness < 0.0:
+                return json.dumps({
+                    "error": "Roughness must be a non-negative, finite value."
+                })
+
         # Calculate film temperature (average of bulk and surface)
         film_temperature = (bulk_fluid_temperature + surface_temperature) / 2.0
         
@@ -112,133 +187,70 @@ def calculate_convection_coefficient(
             try:
                 # Use HT library correlations directly instead of manual implementations
                 if 'flat_plate_external' in geometry_lower and flow_type.lower() == 'forced':
-                    # Use ht.conv_external functions for external flow over flat plate
-                    try:
-                        from ht.conv_external import Nu_external_horizontal_plate
-                        nusselt_number = Nu_external_horizontal_plate(reynolds_number, prandtl_number)
-                    except (ImportError, AttributeError, TypeError, ValueError) as e:
-                        if strict:
-                            raise
-                        # Fallback to manual correlation if ht function not available
-                        logger.warning(f"ht function failed, using fallback: {e}")
-                        if reynolds_number < 5e5:  # Laminar
-                            nusselt_number = 0.664 * math.sqrt(reynolds_number) * prandtl_number**(1/3)
-                        else:  # Turbulent
-                            nusselt_number = 0.037 * reynolds_number**0.8 * prandtl_number**(1/3)
+                    # Use ht.conv_external meta-function for plates
+                    from ht.conv_external import Nu_external_horizontal_plate
+                    nusselt_number = Nu_external_horizontal_plate(reynolds_number, prandtl_number)
                 
                 elif 'pipe_internal' in geometry_lower and flow_type.lower() == 'forced':
-                    # Use ht.conv_internal master function for internal flow
-                    try:
-                        from ht.conv_internal import Nu_conv_internal
-                        # Calculate relative roughness (e/D)
-                        eD = roughness / characteristic_dimension if roughness else 0.0
-                        nusselt_number = Nu_conv_internal(reynolds_number, prandtl_number, eD=eD)
-                    except (ImportError, AttributeError, TypeError, ValueError) as e:
-                        if strict:
-                            raise
-                        # Fallback to manual correlations
-                        logger.warning(f"ht function failed, using fallback: {e}")
-                        if reynolds_number < 2300:  # Laminar
-                            nusselt_number = 3.66  # For constant surface temperature
-                        elif reynolds_number > 10000:  # Fully turbulent
-                            # Gnielinski correlation
-                            f = (0.79 * math.log(reynolds_number) - 1.64)**(-2)  # Friction factor
-                            nusselt_number = ((f/8) * (reynolds_number - 1000) * prandtl_number) / \
-                                            (1 + 12.7 * math.sqrt(f/8) * (prandtl_number**(2/3) - 1))
-                        else:  # Transition
-                            # Approximate transition regime
-                            nusselt_number = 0.023 * reynolds_number**0.8 * prandtl_number**0.4
+                    from ht.conv_internal import Nu_conv_internal
+                    eD = roughness / characteristic_dimension if roughness else 0.0
+                    kwargs = {"eD": eD}
+                    if pipe_length is not None and characteristic_dimension is not None:
+                        kwargs.update({"Di": characteristic_dimension, "x": pipe_length})
+                    nusselt_number = Nu_conv_internal(reynolds_number, prandtl_number, **kwargs)
                 
                 elif 'pipe_external' in geometry_lower or 'cylinder' in geometry_lower:
                     if flow_type.lower() == 'forced':
-                        # Use ht.conv_external for external flow over cylinder
+                        # Use ht.conv_external meta-function for cylinder; include wall Pr if available
+                        from ht.conv_external import Nu_external_cylinder
+                        prandtl_wall = None
                         try:
-                            from ht.conv_external import Nu_cylinder_Churchill_Bernstein
-                            nusselt_number = Nu_cylinder_Churchill_Bernstein(reynolds_number, prandtl_number)
-                        except (ImportError, AttributeError, TypeError, ValueError) as e:
-                            if strict:
-                                raise
-                            # Fallback to manual Churchill and Bernstein correlation
-                            logger.warning(f"ht function failed, using fallback: {e}")
-                            nusselt_number = 0.3 + (0.62 * math.sqrt(reynolds_number) * prandtl_number**(1/3) *
-                                              (1 + (reynolds_number/282000)**(5/8))**(4/5)) / \
-                                              (1 + (0.4/prandtl_number)**(2/3))**(1/4)
+                            wall_props = json.loads(get_fluid_properties(fluid_name, surface_temperature, pressure, strict=strict))
+                            if "error" not in wall_props:
+                                mu_w = wall_props.get("dynamic_viscosity")
+                                Cp_w = wall_props.get("specific_heat_cp")
+                                k_w = wall_props.get("thermal_conductivity")
+                                if mu_w and Cp_w and k_w:
+                                    prandtl_wall = mu_w * Cp_w / k_w
+                        except Exception:
+                            pass
+                        if prandtl_wall is not None:
+                            nusselt_number = Nu_external_cylinder(reynolds_number, prandtl_number, Prw=prandtl_wall)
+                        else:
+                            nusselt_number = Nu_external_cylinder(reynolds_number, prandtl_number)
                     else:  # Natural convection
                         # Use ht.conv_free_immersed for natural convection around cylinder
-                        try:
-                            from ht.conv_free_immersed import Nu_horizontal_cylinder
-                            # Calculate Grashof number for ht function
-                            g = 9.81  # m/s²
-                            beta = 1.0 / film_temperature  # Thermal expansion coefficient (approximation)
-                            delta_t = abs(surface_temperature - bulk_fluid_temperature)
-                            kinematic_viscosity = dynamic_viscosity / density
-                            grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
-                            
-                            nusselt_number = Nu_horizontal_cylinder(prandtl_number, grashof)
-                        except (ImportError, AttributeError, TypeError, ValueError) as e:
-                            if strict:
-                                raise
-                            logger.warning(f"ht function failed, using fallback: {e}")
-                            # Fallback to manual calculation
-                            g = 9.81  # m/s²
-                            beta = 1.0 / film_temperature  # Thermal expansion coefficient (approximation)
-                            delta_t = abs(surface_temperature - bulk_fluid_temperature)
-                            kinematic_viscosity = dynamic_viscosity / density
-                            
-                            grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
-                            rayleigh = grashof * prandtl_number
-                            
-                            # Churchill and Chu correlation for natural convection from horizontal cylinder
-                            nusselt_number = (0.6 + (0.387 * rayleigh**(1/6)) / 
-                                             (1 + (0.559/prandtl_number)**(9/16))**(8/27))**2
+                        from ht.conv_free_immersed import Nu_horizontal_cylinder
+                        # Calculate Grashof number for ht function
+                        g = 9.81  # m/s²
+                        beta = 1.0 / film_temperature  # Thermal expansion coefficient (approximation)
+                        delta_t = abs(surface_temperature - bulk_fluid_temperature)
+                        kinematic_viscosity = dynamic_viscosity / density
+                        grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
+                        nusselt_number = Nu_horizontal_cylinder(prandtl_number, grashof)
                 
                 elif 'sphere' in geometry_lower:
                     if flow_type.lower() == 'forced':
-                        # Whitaker correlation for flow over sphere
-                        nusselt_number = 2 + (0.4 * math.sqrt(reynolds_number) + 0.06 * reynolds_number**(2/3)) * \
-                                        prandtl_number**0.4
+                        # Whitaker correlation for forced flow over sphere
+                        nusselt_number = 2 + (0.4 * math.sqrt(reynolds_number) + 0.06 * reynolds_number**(2/3)) * prandtl_number**0.4
                     else:  # Natural convection
-                        # Similar to cylinder with different constants
+                        from ht.conv_free_immersed import Nu_sphere_Churchill
                         g = 9.81
                         beta = 1.0 / film_temperature
                         delta_t = abs(surface_temperature - bulk_fluid_temperature)
                         kinematic_viscosity = dynamic_viscosity / density
-                        
                         grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
                         rayleigh = grashof * prandtl_number
-                        
-                        nusselt_number = 2 + 0.589 * rayleigh**(1/4) / (1 + (0.469/prandtl_number)**(9/16))**(4/9)
+                        nusselt_number = Nu_sphere_Churchill(prandtl_number, rayleigh)
                 
                 elif ('vertical' in geometry_lower or 'wall' in geometry_lower) and flow_type.lower() == 'natural':
-                    # Use ht.conv_free_immersed for natural convection on vertical plate
-                    try:
-                        from ht.conv_free_immersed import Nu_free_vertical_plate
-                        # Calculate Grashof number for ht function
-                        g = 9.81
-                        beta = 1.0 / film_temperature
-                        delta_t = abs(surface_temperature - bulk_fluid_temperature)
-                        kinematic_viscosity = dynamic_viscosity / density
-                        grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
-                        
-                        nusselt_number = Nu_free_vertical_plate(prandtl_number, grashof)
-                    except (ImportError, AttributeError, TypeError, ValueError) as e:
-                        if strict:
-                            raise
-                        logger.warning(f"ht function failed, using fallback: {e}")
-                        # Fallback to manual correlation
-                        g = 9.81
-                        beta = 1.0 / film_temperature
-                        delta_t = abs(surface_temperature - bulk_fluid_temperature)
-                        kinematic_viscosity = dynamic_viscosity / density
-                        
-                        grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
-                        rayleigh = grashof * prandtl_number
-                        
-                        if rayleigh < 1e9:  # Laminar
-                            nusselt_number = 0.68 + (0.67 * rayleigh**(1/4)) / (1 + (0.492/prandtl_number)**(9/16))**(4/9)
-                        else:  # Turbulent
-                            nusselt_number = (0.825 + (0.387 * rayleigh**(1/6)) / 
-                                             (1 + (0.492/prandtl_number)**(9/16))**(8/27))**2
+                    from ht.conv_free_immersed import Nu_free_vertical_plate
+                    g = 9.81
+                    beta = 1.0 / film_temperature
+                    delta_t = abs(surface_temperature - bulk_fluid_temperature)
+                    kinematic_viscosity = dynamic_viscosity / density
+                    grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
+                    nusselt_number = Nu_free_vertical_plate(prandtl_number, grashof)
                 else:
                     # For other geometries, try a fallback approach
                     if flow_type.lower() == 'forced':
@@ -318,6 +330,7 @@ def calculate_convection_coefficient(
         # Prepare result
         result = {
             "convection_coefficient_h": convection_coefficient,
+            "convection_coefficient_h_W_m2K": convection_coefficient,
             "nusselt_number": nusselt_number,
             "geometry": geometry,
             "flow_type": flow_type,

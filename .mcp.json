@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "heat-transfer-mcp": {
+      "type": "stdio",
+      "command": "/mnt/c/Users/hvksh/mcp-servers/venv/Scripts/python.exe",
+      "args": [
+        "C:\\Users\\hvksh\\mcp-servers\\heat-transfer-mcp\\server.py"
+      ],
+      "env": {
+        "MCP_TIMEOUT": "600000",
+        "HEAT_TRANSFER_MCP_ROOT": "C:\\Users\\hvksh\\mcp-servers\\heat-transfer-mcp",
+        "MCP_SIMULATION_TIMEOUT_S": "280"
+      }
+    }
+  }
+}

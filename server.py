@@ -43,8 +43,23 @@ from tools.buried_object_heat_loss import calculate_buried_object_heat_loss
 from tools.hx_shell_side_h_kern import calculate_hx_shell_side_h_kern
 from tools.size_heat_exchanger_area import size_heat_exchanger_area
 from tools.estimate_hx_physical_dims import estimate_hx_physical_dims
+from tools.tank_heat_loss import tank_heat_loss
+from tools.extreme_conditions import extreme_conditions
+from tools.heat_exchanger_design import heat_exchanger_design
+from tools.pipe_heat_management import pipe_heat_management
+from tools.parameter_optimization import parameter_optimization
 
 # List of all tools
+# Consolidated omnibus tools (primary)
+OMNIBUS_TOOLS = [
+    tank_heat_loss,
+    extreme_conditions,
+    heat_exchanger_design,
+    pipe_heat_management,
+    parameter_optimization,
+]
+
+# Legacy granular tools (kept for backward compatibility)
 TOOLS = [
     get_ambient_conditions,
     get_fluid_properties,
@@ -63,7 +78,7 @@ TOOLS = [
 ]
 
 # Register all tools with automatic unit awareness if available
-for tool in TOOLS:
+for tool in OMNIBUS_TOOLS + TOOLS:
     if UNIT_CONVERSION_ENABLED:
         # Apply unit-aware decorator
         tool_name = tool.__name__
@@ -122,7 +137,7 @@ def log_server_capabilities():
         logger.info("    Power: W")
     
     logger.info("="*60)
-    logger.info(f"Server registered {len(TOOLS)} tools successfully")
+    logger.info(f"Server registered {len(OMNIBUS_TOOLS) + len(TOOLS)} tools successfully")
     logger.info("="*60)
 
 if __name__ == "__main__":

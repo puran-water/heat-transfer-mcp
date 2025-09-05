@@ -78,14 +78,14 @@ def calculate_surface_heat_transfer(
         
         if ('cylinder_tank' in geometry_lower or 'tank' in geometry_lower) and diameter and height:
             if 'vertical' in geometry_lower:
-                # Vertical cylinder
-                outer_surface_area = math.pi * diameter * height + math.pi * (diameter/2)**2
+                # Vertical cylinder - includes both endcaps
+                outer_surface_area = math.pi * diameter * height + 2 * math.pi * (diameter/2)**2
             elif 'horizontal' in geometry_lower:
                 # Horizontal cylinder
                 outer_surface_area = math.pi * diameter * length + 2 * math.pi * (diameter/2)**2
             else:
-                # Default to vertical if not specified
-                outer_surface_area = math.pi * diameter * height + math.pi * (diameter/2)**2
+                # Default to vertical if not specified - includes both endcaps
+                outer_surface_area = math.pi * diameter * height + 2 * math.pi * (diameter/2)**2
         elif 'flat_surface' in geometry_lower or 'wall' in geometry_lower:
             if length and width:
                 outer_surface_area = length * width
@@ -111,10 +111,11 @@ def calculate_surface_heat_transfer(
         
         # Iteration setup
         max_iterations = 50
-        tolerance = 0.1  # Kelvin
+        tolerance_W = 1.0  # Watts - dimensionally consistent tolerance
+        damping_factor = 0.5  # Adaptive damping
         result_log = []  # To track convergence
         
-        # Estimate external convection coefficient
+        # Determine convection geometry for external surface
         conv_geometry = ""
         if 'vertical' in geometry_lower and 'cylinder' in geometry_lower:
             conv_geometry = "vertical_cylinder_external"
@@ -130,25 +131,8 @@ def calculate_surface_heat_transfer(
         else:
             conv_geometry = "flat_plate_external"  # Default
         
-        # Get external convection coefficient
-        conv_coeff_json = calculate_convection_coefficient(
-            geometry=conv_geometry,
-            characteristic_dimension=diameter if diameter else (length or width or 1.0),
-            fluid_name=fluid_name_external,
-            bulk_fluid_temperature=T_ambient_K,
-            surface_temperature=Ts_outer_K_guess,  # Initial guess
-            pressure=101325.0,  # Standard pressure
-            flow_type='forced',
-            fluid_velocity=wind_speed
-        )
-        conv_coeff_data = json.loads(conv_coeff_json)
-        
-        if "error" in conv_coeff_data:
-            return json.dumps({
-                "error": f"Failed to calculate external convection coefficient: {conv_coeff_data['error']}"
-            })
-        
-        h_outer = conv_coeff_data.get("convection_coefficient_h")
+        # Initial calculation of external convection coefficient
+        # Will be updated during iteration
         
         # Calculate internal thermal resistance if wall_layers provided
         if wall_layers is not None:
@@ -160,20 +144,22 @@ def calculate_surface_heat_transfer(
                 h_inner_assumed = 100.0  # W/m²K (moderate value for other fluids)
             
             # Calculate thermal resistance between internal fluid and outer surface
-            if 'cylinder' in geometry_lower:
+            if 'cylinder' in geometry_lower or 'pipe' in geometry_lower:
                 # Use overall_heat_transfer tool for cylindrical calculation
-                # Need inner diameter
+                # Important: Do NOT include external convection in this calculation
+                # to avoid double-counting
                 inner_diameter = dimensions.get('inner_diameter')
                 if inner_diameter is None:
                     # Estimate inner diameter from outer diameter and wall thickness
                     total_wall_thickness = sum(layer.get('thickness', 0) for layer in wall_layers)
                     inner_diameter = diameter - 2 * total_wall_thickness
                 
+                # Calculate resistance ending at outer surface (no external convection)
                 u_value_json = calculate_overall_heat_transfer_coefficient(
                     geometry='cylinder',
                     layers=wall_layers,
                     inner_convection_coefficient_h=h_inner_assumed,
-                    outer_convection_coefficient_h=h_outer,
+                    outer_convection_coefficient_h=1e10,  # Effectively infinite to exclude external resistance
                     inner_diameter=inner_diameter,
                     outer_diameter=diameter
                 )
@@ -184,8 +170,16 @@ def calculate_surface_heat_transfer(
                         "error": f"Failed to calculate overall heat transfer coefficient: {u_value_data['error']}"
                     })
                 
-                # Use the calculated U-value
-                R_internal_plus_wall = 1.0 / u_value_data.get("overall_heat_transfer_coefficient_U_outer", 0)
+                # Extract the per-length resistances and convert to area-based
+                # Get the resistance from inner fluid to outer surface
+                R_conv_inner_per_L = u_value_data.get('convection_resistance_inner_per_length_mk_w', 0)
+                R_cond_total_per_L = u_value_data.get('conduction_resistance_total_per_length_mk_w', 0)
+                r_outer = diameter / 2
+                
+                # Convert per-length resistances to area-based resistance
+                # Area per unit length for cylinder: 2πr
+                A_out_per_L = 2 * math.pi * r_outer
+                R_internal_plus_wall = (R_conv_inner_per_L + R_cond_total_per_L) * A_out_per_L / outer_surface_area
                 
             else:  # Flat wall
                 # Calculate flat wall resistance
@@ -221,7 +215,33 @@ def calculate_surface_heat_transfer(
             R_internal_plus_wall = 1.0 / overall_heat_transfer_coefficient_U
         
         # Iteration to find Ts_outer and heat transfer rates
+        prev_balance_diff = float('inf')
         for i in range(max_iterations):
+            # Calculate external convection coefficient with current surface temperature
+            # Use natural convection for very low wind speeds
+            flow_type = 'natural' if wind_speed <= 0.2 else 'forced'
+            
+            # Use film temperature for better accuracy
+            T_film = 0.5 * (Ts_outer_K_guess + T_ambient_K)
+            
+            conv_coeff_json = calculate_convection_coefficient(
+                geometry=conv_geometry,
+                characteristic_dimension=diameter if diameter else (length or width or 1.0),
+                fluid_name=fluid_name_external,
+                bulk_fluid_temperature=T_film,  # Use film temperature
+                surface_temperature=Ts_outer_K_guess,
+                pressure=101325.0,  # Standard pressure
+                flow_type=flow_type,
+                fluid_velocity=wind_speed if flow_type == 'forced' else None
+            )
+            conv_coeff_data = json.loads(conv_coeff_json)
+            
+            if "error" in conv_coeff_data:
+                logger.warning(f"Failed to update h: {conv_coeff_data.get('error')}. Using previous value.")
+                if i == 0:
+                    h_outer = 10.0  # Default fallback value
+            else:
+                h_outer = conv_coeff_data.get("convection_coefficient_h", 10.0)
             # Heat flow FROM internal fluid TO outer surface
             Q_cond = (T_internal_K - Ts_outer_K_guess) / (R_internal_plus_wall / outer_surface_area)
             
@@ -240,20 +260,33 @@ def calculate_surface_heat_transfer(
             # Energy balance difference
             balance_diff = Q_cond - Q_net_out
             
-            # Check for convergence
-            if abs(balance_diff) < tolerance * outer_surface_area:
+            # Check for convergence (dimensionally consistent)
+            if abs(balance_diff) < tolerance_W:
                 logger.info(f"Surface temperature converged after {i+1} iterations: {Ts_outer_K_guess:.2f} K")
                 break
             
+            # Adaptive damping - reduce if diverging
+            if abs(balance_diff) > abs(prev_balance_diff):
+                damping_factor *= 0.5  # Reduce damping if diverging
+                damping_factor = max(0.01, damping_factor)  # Keep minimum damping
+            
             # Update surface temperature estimate
-            # Use dampening factor to prevent oscillations
-            adjustment_factor = 0.1
             # Approximate derivatives for Newton's method
             dQ_cond_dTs = -outer_surface_area / R_internal_plus_wall
-            dQ_out_dTs = h_outer * outer_surface_area + 4 * surface_emissivity * STEFAN_BOLTZMANN * outer_surface_area * Ts_outer_K_guess**3
             
-            # Update using Newton's method with dampening
-            Ts_outer_K_guess -= adjustment_factor * balance_diff / (dQ_cond_dTs - dQ_out_dTs)
+            # Linearize radiation for stability
+            T_mean_rad = 0.5 * (Ts_outer_K_guess + T_sky_K)
+            h_rad_linear = 4 * surface_emissivity * STEFAN_BOLTZMANN * T_mean_rad**3
+            
+            dQ_out_dTs = h_outer * outer_surface_area + h_rad_linear * outer_surface_area
+            
+            # Update using Newton's method with adaptive damping
+            Ts_outer_K_new = Ts_outer_K_guess - damping_factor * balance_diff / (dQ_cond_dTs - dQ_out_dTs)
+            
+            # Apply damped update
+            Ts_outer_K_guess = damping_factor * Ts_outer_K_new + (1 - damping_factor) * Ts_outer_K_guess
+            
+            prev_balance_diff = balance_diff
             
             # Clamp temperature to reasonable bounds
             Ts_outer_K_guess = max(T_ambient_K - 50, min(T_internal_K + 50, Ts_outer_K_guess))
@@ -280,6 +313,7 @@ def calculate_surface_heat_transfer(
         Q_total_final = Q_conv_final + Q_rad_final - Q_solar_final
         
         # Create result
+        converged = i < max_iterations - 1
         result = {
             "total_heat_rate_loss_w": Q_total_final,
             "convective_heat_rate_w": Q_conv_final,
@@ -292,11 +326,13 @@ def calculate_surface_heat_transfer(
             "external_convection_coefficient_w_m2k": h_outer,
             "internal_plus_wall_resistance_k_w": R_internal_plus_wall / outer_surface_area,
             "geometry": geometry,
-            "converged": i < max_iterations - 1,
+            "converged": converged,
             "iterations_required": i + 1,
             "sky_temperature_k": T_sky_K,
             "iteration_log": result_log[-5:] if len(result_log) > 5 else result_log  # Show last 5 iterations
         }
+        if not converged:
+            result["warning"] = f"Surface temperature solver did not converge within {max_iterations} iterations. Results may be approximate."
         
         return json.dumps(result)
         

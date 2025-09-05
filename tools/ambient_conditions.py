@@ -54,7 +54,7 @@ def get_ambient_conditions(
         import pandas as pd
         
         # Handle parameters
-        if not latitude or not longitude:
+        if latitude is None or longitude is None:
             if location_name:
                 # Basic fallback for well-known locations
                 # In a real implementation, use geocoding API or meteostat's location search
@@ -78,7 +78,24 @@ def get_ambient_conditions(
                     "error": "Either latitude/longitude or a recognized location_name must be provided."
                 })
         
+        # Validate latitude and longitude ranges
+        try:
+            lat_val = float(latitude)
+            lon_val = float(longitude)
+        except (TypeError, ValueError):
+            return json.dumps({
+                "error": "Latitude and longitude must be numeric values."
+            })
+        if not (-90.0 <= lat_val <= 90.0) or not (-180.0 <= lon_val <= 180.0):
+            return json.dumps({
+                "error": "Invalid coordinates. Latitude must be between -90 and 90; longitude between -180 and 180."
+            })
+        
         # Parse dates
+        if not start_date or not end_date:
+            return json.dumps({
+                "error": "Both 'start_date' and 'end_date' are required in YYYY-MM-DD format."
+            })
         try:
             start = datetime.strptime(start_date, "%Y-%m-%d")
             end = datetime.strptime(end_date, "%Y-%m-%d")
@@ -86,16 +103,20 @@ def get_ambient_conditions(
             return json.dumps({
                 "error": f"Invalid date format. Please use YYYY-MM-DD. Error: {str(e)}"
             })
+        if start > end:
+            return json.dumps({
+                "error": "'start_date' must be on or before 'end_date'."
+            })
         
         # Create location point
         if elevation is not None:
-            location = Point(latitude, longitude, elevation)
+            location = Point(lat_val, lon_val, elevation)
         else:
-            location = Point(latitude, longitude)
+            location = Point(lat_val, lon_val)
         
         # Fetch data based on time resolution
         try:
-            if time_resolution.lower() == 'hourly':
+            if time_resolution and time_resolution.lower() == 'hourly':
                 data = Hourly(location, start, end)
             else:  # Default to daily
                 data = Daily(location, start, end)

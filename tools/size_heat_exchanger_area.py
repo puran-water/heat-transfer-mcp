@@ -246,6 +246,7 @@ def size_heat_exchanger_area(
                 flow_type='forced',
                 fluid_velocity=tube_fluid_velocity,
                 roughness=tube_roughness,
+                pipe_length=hx_length_per_pass,
                 strict=strict
             )
             
@@ -256,7 +257,7 @@ def size_heat_exchanger_area(
                     "error": f"Failed to calculate tube-side h: {tube_side_h_result['error']}"
                 })
                 
-            tube_side_h = tube_side_h_result.get("convection_coefficient_h_W_m2K")
+            tube_side_h = tube_side_h_result.get("convection_coefficient_h_W_m2K", tube_side_h_result.get("convection_coefficient_h"))
             h_calc_details["calculated_hi"] = tube_side_h
             h_calc_details["hi_details"] = tube_side_h_result
             
@@ -287,6 +288,9 @@ def size_heat_exchanger_area(
             tube_layout_angle = shell_geometry_params.get("tube_layout_angle")
             baffle_spacing = shell_geometry_params.get("baffle_spacing")
             baffle_cut_percent = shell_geometry_params.get("baffle_cut_percent")
+            tube_rows = shell_geometry_params.get("tube_rows")
+            pitch_parallel = shell_geometry_params.get("pitch_parallel")
+            pitch_normal = shell_geometry_params.get("pitch_normal")
             
             if None in [shell_inner_diameter, tube_pitch, tube_layout_angle, baffle_spacing, baffle_cut_percent]:
                 return json.dumps({
@@ -304,7 +308,10 @@ def size_heat_exchanger_area(
                 shell_fluid_flow_rate=shell_fluid_flow_rate,
                 shell_fluid_bulk_temp=shell_fluid_bulk_temp,
                 shell_fluid_pressure=shell_fluid_pressure,
-                tube_wall_temp=tube_wall_temp_est
+                tube_wall_temp=tube_wall_temp_est,
+                tube_rows=tube_rows,
+                pitch_parallel=pitch_parallel,
+                pitch_normal=pitch_normal
             )
             
             shell_side_h_result = json.loads(shell_side_h_json)

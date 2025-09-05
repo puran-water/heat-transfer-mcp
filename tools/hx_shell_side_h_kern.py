@@ -27,6 +27,9 @@ def calculate_hx_shell_side_h_kern(
     shell_fluid_bulk_temp: float,
     shell_fluid_pressure: float = 101325.0,
     tube_wall_temp: Optional[float] = None,
+    tube_rows: Optional[int] = None,
+    pitch_parallel: Optional[float] = None,
+    pitch_normal: Optional[float] = None,
     strict: bool = False,
 ) -> str:
     """Estimates shell-side h using Kern's method.
@@ -49,6 +52,14 @@ def calculate_hx_shell_side_h_kern(
     """
     try:
         # Parameter validation
+        if tube_pitch <= tube_outer_diameter:
+            return json.dumps({
+                "error": "tube_pitch must be greater than tube_outer_diameter to allow flow clearance."
+            })
+        if shell_inner_diameter <= 0 or tube_outer_diameter <= 0 or tube_pitch <= 0 or baffle_spacing <= 0:
+            return json.dumps({
+                "error": "Dimensions must be positive values (shell_inner_diameter, tube_outer_diameter, tube_pitch, baffle_spacing)."
+            })
         if not (0 < baffle_cut_percent < 50):
             warning_msg = f"Baffle cut ({baffle_cut_percent}%) is outside typical range (15-45%). Kern's method may be inaccurate."
             if strict:
@@ -101,35 +112,59 @@ def calculate_hx_shell_side_h_kern(
         # 5. Calculate Shell-Side Reynolds Number (Re_s)
         Re_s = De * Gs / mu_b if mu_b > 0 else 0
 
-        # 6. Calculate Nusselt number using Kern correlation
-        # WARNING: C_kern=0.36, n_kern=0.55 is only valid for single-segmental baffles with 25% cut
-        if baffle_cut_percent != 25.0:
-            warning_msg = f"Kern constants (C=0.36, n=0.55) are valid only for 25% baffle cut, but {baffle_cut_percent}% was specified. Results may be inaccurate."
-            if strict:
-                raise ValueError(warning_msg)
-            logger.warning(warning_msg)
-        
-        # Try to use ht library for more accurate shell-side correlation if available
+        # 6. Estimate Nusselt number: prefer tube-bank crossflow correlations when available
         Nu_s = None
         correlation_used = "unknown"
-        
+
         if HT_AVAILABLE:
             try:
-                # Try using ht.hx.shell_side_Nu_Bell which includes baffle corrections
-                from ht.hx import shell_side_Nu_Bell
-                # This is a placeholder - actual implementation would need more geometry details
-                # For now, fall back to Kern method
-                logger.info("ht library available but Bell-Delaware method not implemented yet")
-            except (ImportError, AttributeError, TypeError, ValueError) as e:
+                # Use Zukauskas/ESDU/Grimison correlations for tube banks in crossflow
+                from ht.conv_tube_bank import Nu_Zukauskas_Bejan
+                # Estimate superficial velocity and Re on Do
+                Vs = Gs / rho_b if rho_b else 0.0
+                Re_tb = rho_b * Vs * tube_outer_diameter / mu_b if mu_b and rho_b else 0.0
+
+                # Determine pitches; if not provided, assume square/triangular with equal pitch spacing
+                p_par = pitch_parallel if pitch_parallel is not None else tube_pitch
+                p_norm = pitch_normal if pitch_normal is not None else tube_pitch
+                n_rows = tube_rows if tube_rows is not None else 10
+
+                # Optional wall Pr correction
+                Pr_w = None
+                if tube_wall_temp is not None:
+                    try:
+                        wall_props_json = get_fluid_properties(shell_fluid_name, tube_wall_temp, shell_fluid_pressure, strict=strict)
+                        wall_props = json.loads(wall_props_json)
+                        mu_w = wall_props.get("dynamic_viscosity")
+                        Cp_w = wall_props.get("specific_heat_cp")
+                        k_w = wall_props.get("thermal_conductivity")
+                        if mu_w and Cp_w and k_w:
+                            Pr_w = mu_w * Cp_w / k_w
+                    except Exception:
+                        Pr_w = None
+
+                if Pr_w is not None:
+                    Nu_s = Nu_Zukauskas_Bejan(Re_tb, Pr_b, tube_rows=n_rows, pitch_parallel=p_par, pitch_normal=p_norm, Pr_wall=Pr_w)
+                else:
+                    Nu_s = Nu_Zukauskas_Bejan(Re_tb, Pr_b, tube_rows=n_rows, pitch_parallel=p_par, pitch_normal=p_norm)
+                correlation_used = "Zukauskas-Bejan tube-bank crossflow"
+            except Exception as e:
                 if strict:
                     raise
-                logger.warning(f"ht shell-side correlation failed: {e}")
-        
-        # Fall back to Kern method
+                logger.warning(f"ht tube-bank correlation failed: {e}")
+
+        # Fallback to Kern method if tube-bank correlations are not available/applicable
         if Nu_s is None:
-            C_kern, n_kern = 0.36, 0.55  # Kern method constants for 25% baffle cut
+            # Warn about baffle cut applicability for Kern
+            if baffle_cut_percent != 25.0:
+                warning_msg = (
+                    "Kern constants (C=0.36, n=0.55) assume ~25% baffle cut; provided "
+                    f"{baffle_cut_percent}%. Results may be approximate."
+                )
+                logger.warning(warning_msg)
+            C_kern, n_kern = 0.36, 0.55
             Nu_s = C_kern * (Re_s**n_kern) * (Pr_b**(1.0/3.0)) if Re_s > 0 else 0
-            correlation_used = f"Kern Approx Nu = {C_kern:.3f}*Re^{n_kern:.3f}*Pr^(1/3) (25% baffle cut)"
+            correlation_used = f"Kern Approx Nu = {C_kern:.2f}*Re^{n_kern:.2f}*Pr^(1/3)"
 
         # 7. Calculate h_o without viscosity correction
         h_o_provisional = Nu_s * k_b / De if De > 0 else 0

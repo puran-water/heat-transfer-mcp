@@ -73,27 +73,34 @@ def calculate_nusselt_number_external_flow(
         Nusselt number (dimensionless)
     """
     geometry_lower = geometry.lower()
-    
-    if geometry_lower == "flat_plate":
-        # Flat plate correlation
+
+    # Prefer correlations from ht when available
+    if HT_AVAILABLE:
+        try:
+            if geometry_lower == "flat_plate" or "flat_plate_external" in geometry_lower:
+                from ht.conv_external import Nu_external_horizontal_plate
+                return Nu_external_horizontal_plate(reynolds_number, prandtl_number)
+            if "cylinder" in geometry_lower:
+                from ht.conv_external import Nu_external_cylinder
+                return Nu_external_cylinder(reynolds_number, prandtl_number)
+        except Exception as e:
+            logger.debug(f"ht external convection call failed ({geometry}): {e}; using fallback.")
+
+    # Fallback simple correlations
+    if geometry_lower == "flat_plate" or "flat_plate_external" in geometry_lower:
         if reynolds_number < 5e5:  # Laminar
             return 0.664 * math.sqrt(reynolds_number) * prandtl_number**(1/3)
-        else:  # Turbulent
+        else:
             return 0.037 * reynolds_number**0.8 * prandtl_number**(1/3)
-    
-    elif "cylinder" in geometry_lower:
-        # Cylinder correlation (Churchill and Bernstein)
+    if "cylinder" in geometry_lower:
         return 0.3 + ((0.62 * math.sqrt(reynolds_number) * prandtl_number**(1/3) *
-                      (1 + (reynolds_number/282000)**(5/8))**(4/5)) / 
+                      (1 + (reynolds_number/282000)**(5/8))**(4/5)) /
                       (1 + (0.4/prandtl_number)**(2/3))**(1/4))
-    
-    elif "sphere" in geometry_lower:
-        # Sphere correlation
+    if "sphere" in geometry_lower:
+        # Whitaker-like simple fallback
         return 2 + 0.6 * math.sqrt(reynolds_number) * prandtl_number**(1/3)
-    
-    else:
-        logger.warning(f"Geometry '{geometry}' not recognized for Nusselt calculation")
-        return 2.0  # Default minimum value
+    logger.warning(f"Geometry '{geometry}' not recognized for Nusselt calculation")
+    return 2.0
 
 def calculate_radiation_heat_transfer(
     emissivity: float,

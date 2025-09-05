@@ -446,7 +446,37 @@ TOOL_MAPPINGS = {
         'baffle_spacing': 'length_small',
         'tube_pitch': 'length_small',
         'tube_length_options': 'list'  # List of lengths
-    }
+    },
+
+    # Omnibus consolidated tools
+    'tank_heat_loss': {
+        'dimensions': 'nested',
+        'contents_temperature': 'temperature',
+        'ambient_air_temperature': 'temperature',
+        'wind_speed': 'velocity',
+        'sky_temperature': 'temperature',
+        'wall_layers': 'list_of_dicts',
+    },
+    'heat_exchanger_design': {
+        'process_mass_flow_kg_s': 'mass_flow',
+        'process_inlet_temp_K': 'temperature',
+        'process_target_temp_K': 'temperature',
+        'heating_inlet_temp_K': 'temperature',
+        'heating_outlet_temp_K': 'temperature',
+        'required_total_duty_W': 'power',
+        'overall_U_W_m2K': 'htc',
+    },
+    'pipe_heat_management': {
+        'outer_diameter_m': 'length',
+        'length_m': 'length',
+        'internal_temperature_K': 'temperature',
+        'ambient_air_temperature_K': 'temperature',
+        'wind_speed_m_s': 'velocity',
+        'burial_depth_m': 'length',
+        'ground_surface_temperature_K': 'temperature',
+        'pipe_inner_diameter_m': 'length',
+        'heat_trace_w_per_m': 'power',
+    },
 }
 
 def get_tool_mapping(tool_name: str) -> Dict[str, str]:

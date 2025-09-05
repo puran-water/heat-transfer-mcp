@@ -11,36 +11,70 @@ from functools import lru_cache
 from typing import Dict, List, Optional, Union, Any
 
 from utils.constants import DEG_C_to_K
-from utils.import_helpers import HT_AVAILABLE, get_fluid_properties_fallback
+from utils.import_helpers import HT_AVAILABLE, THERMO_AVAILABLE, get_fluid_properties_fallback
 
 logger = logging.getLogger("heat-transfer-mcp.fluid_properties")
 
 @lru_cache(maxsize=128)
-def _cached_get_chemical_properties(fluid_name: str, temperature: float, pressure: float) -> Optional[dict]:
-    """Cached version of Chemical property lookup to avoid repeated expensive calls."""
+def _cached_get_properties_thermo(fluid_name: str, temperature: float, pressure: float) -> Optional[dict]:
+    """Cached property lookup using thermo for pure fluids and common mixtures.
+
+    - Uses Chemical for pure components
+    - Uses DryAirLemmon/Stream for air
+    """
+    if not THERMO_AVAILABLE:
+        return None
     try:
+        # Handle common mixture aliases first
+        fname = fluid_name.strip().lower()
+        if fname == 'air':
+            # Prefer accurate dry air EOS if available
+            try:
+                from thermo.phases.air_phase import DryAirLemmon
+                air = DryAirLemmon(T=temperature, P=pressure)
+                # DryAirLemmon returns molar properties, convert to mass basis
+                # Molecular weight of air is approximately 28.965 g/mol
+                MW_air = 0.028965  # kg/mol
+                rho_molar = float(air.rho())  # mol/m³
+                rho = rho_molar * MW_air  # kg/m³
+                Cp_molar = float(air.Cp())  # J/mol/K
+                Cp = Cp_molar / MW_air  # J/kg/K
+                k = float(air.k())  # W/m/K (already intensive)
+                mu = float(air.mu())  # Pa·s (already intensive)
+                nu = mu / rho if rho else None
+                Pr = float(mu*Cp/k) if (mu and Cp and k) else None
+                return {'rho': rho, 'Cp': Cp, 'k': k, 'mu': mu, 'nu': nu, 'Pr': Pr, 'phase': 'g'}
+            except Exception:
+                # Fallback to Chemical which handles air properly
+                try:
+                    from thermo import Chemical
+                    chem = Chemical('air', T=temperature, P=pressure)
+                    return {
+                        'rho': float(chem.rho) if getattr(chem, 'rho', None) is not None else None,
+                        'Cp': float(chem.Cp) if getattr(chem, 'Cp', None) is not None else None,
+                        'k': float(chem.k) if getattr(chem, 'k', None) is not None else None,
+                        'mu': float(chem.mu) if getattr(chem, 'mu', None) is not None else None,
+                        'nu': float(chem.nu) if getattr(chem, 'nu', None) is not None else None,
+                        'Pr': float(chem.Pr) if getattr(chem, 'Pr', None) is not None else None,
+                        'phase': getattr(chem, 'phase', 'g'),
+                    }
+                except Exception:
+                    return None
+
+        # Otherwise treat as pure chemical
         from thermo import Chemical
-        
-        # Handle special cases for common fluid names
-        chemical_name = fluid_name
-        if fluid_name.lower() == 'air':
-            chemical_name = 'nitrogen'
-        
-        # Create Chemical object with specified conditions
-        chem = Chemical(chemical_name, T=temperature, P=pressure)
-        
-        # Check phase - only allow liquid or gas phases
+        chem = Chemical(fluid_name, T=temperature, P=pressure)
+        # Only liquid or gas phases are supported for now
         if hasattr(chem, 'phase') and chem.phase not in ['l', 'g']:
-            raise ValueError(f"Unsupported phase '{chem.phase}' for {fluid_name} at T={temperature}K, P={pressure}Pa")
-        
+            raise ValueError(f"Unsupported phase '{chem.phase}' for {fluid_name} at T={temperature} K, P={pressure} Pa")
         return {
-            'rho': float(chem.rho) if hasattr(chem, 'rho') and chem.rho is not None else None,
-            'Cp': float(chem.Cp) if hasattr(chem, 'Cp') and chem.Cp is not None else None,
-            'k': float(chem.k) if hasattr(chem, 'k') and chem.k is not None else None,
-            'mu': float(chem.mu) if hasattr(chem, 'mu') and chem.mu is not None else None,
-            'nu': float(chem.nu) if hasattr(chem, 'nu') and chem.nu is not None else None,
-            'Pr': float(chem.Pr) if hasattr(chem, 'Pr') and chem.Pr is not None else None,
-            'phase': getattr(chem, 'phase', 'unknown')
+            'rho': float(chem.rho) if getattr(chem, 'rho', None) is not None else None,
+            'Cp': float(chem.Cp) if getattr(chem, 'Cp', None) is not None else None,
+            'k': float(chem.k) if getattr(chem, 'k', None) is not None else None,
+            'mu': float(chem.mu) if getattr(chem, 'mu', None) is not None else None,
+            'nu': float(chem.nu) if getattr(chem, 'nu', None) is not None else None,
+            'Pr': float(chem.Pr) if getattr(chem, 'Pr', None) is not None else None,
+            'phase': getattr(chem, 'phase', 'unknown'),
         }
     except Exception:
         return None
@@ -65,70 +99,74 @@ def get_fluid_properties(
     try:
         result = {}
         
-        if strict and not HT_AVAILABLE:
-            raise ImportError("ht library required with strict=True")
-            
-        if HT_AVAILABLE:
-            import ht
-            
+        # Basic input validation
+        try:
+            T = float(temperature)
+        except (TypeError, ValueError):
+            return json.dumps({
+                "error": "Temperature must be a numeric value in Kelvin."
+            })
+        try:
+            P = float(pressure)
+        except (TypeError, ValueError):
+            return json.dumps({
+                "error": "Pressure must be a numeric value in Pascals."
+            })
+        if T < 0.0:
+            return json.dumps({
+                "error": "Temperature cannot be below 0 K (absolute zero)."
+            })
+        if T > 1.0e4:
+            return json.dumps({
+                "error": "Temperature is unrealistically high. Please provide T < 10000 K."
+            })
+        if not math.isfinite(T) or not math.isfinite(P):
+            return json.dumps({
+                "error": "Temperature and pressure must be finite real numbers."
+            })
+        if P <= 0.0:
+            return json.dumps({
+                "error": "Pressure must be positive."
+            })
+        
+        # Prefer thermo for property calculations when available
+        if THERMO_AVAILABLE:
             try:
-                # Try using thermo.Chemical for accurate fluid properties
-                logger.info(f"Attempting to get properties for {fluid_name} using thermo.Chemical")
-                props = None
-                
-                try:
-                    # Use cached function to avoid repeated expensive Chemical lookups
-                    cached_props = _cached_get_chemical_properties(fluid_name, temperature, pressure)
-                    
-                    if cached_props is not None:
-                        # Create a props object with the cached properties
-                        class ChemicalProps:
-                            pass
-                        props = ChemicalProps()
-                        for key, value in cached_props.items():
-                            setattr(props, key, value)
-                        
-                        logger.info(f"Successfully obtained fluid properties for {fluid_name} using cached thermo.Chemical")
-                    else:
-                        props = None
-                except ImportError as ie:
-                    if strict:
-                        raise ImportError(f"thermo module required with strict=True: {ie}")
-                    logger.error(f"thermo module not installed: {ie}")
-                    props = None
-                except (AttributeError, TypeError, ValueError) as chem_error:
-                    if strict:
-                        raise
-                    logger.warning(f"Error using thermo.Chemical for {fluid_name}: {chem_error}")
-                    props = None
-                        
+                logger.info(f"Attempting to get properties for {fluid_name} using thermo")
+                props = _cached_get_properties_thermo(fluid_name, T, P)
                 if props is not None:
-                    # Format properties
+                    # Ensure all derived properties are present
+                    rho = props.get('rho')
+                    Cp = props.get('Cp')
+                    k = props.get('k')
+                    mu = props.get('mu')
+                    nu = props.get('nu') if props.get('nu') is not None and props.get('nu') == props.get('nu') else (mu/rho if (mu and rho) else None)
+                    Pr = props.get('Pr') if props.get('Pr') is not None and props.get('Pr') == props.get('Pr') else (mu*Cp/k if (mu and Cp and k) else None)
+
                     result = {
                         "fluid_name": fluid_name,
-                        "temperature_k": temperature,
-                        "pressure_pa": pressure,
-                        "density": float(props.rho) if hasattr(props, 'rho') else None,
-                        "specific_heat_cp": float(props.Cp) if hasattr(props, 'Cp') else None,
-                        "thermal_conductivity": float(props.k) if hasattr(props, 'k') else None,
-                        "dynamic_viscosity": float(props.mu) if hasattr(props, 'mu') else None,
-                        "kinematic_viscosity": float(props.nu) if hasattr(props, 'nu') else None,
-                        "prandtl_number": float(props.Pr) if hasattr(props, 'Pr') else None,
-                        "phase": getattr(props, 'phase', 'unknown'),
+                        "temperature_k": T,
+                        "pressure_pa": P,
+                        "density": rho,
+                        "specific_heat_cp": Cp,
+                        "thermal_conductivity": k,
+                        "dynamic_viscosity": mu,
+                        "kinematic_viscosity": nu,
+                        "prandtl_number": Pr,
+                        "phase": props.get('phase', 'unknown'),
                         "data_source": "thermo_library",
-                        "accuracy": "high"
+                        "accuracy": "high",
                     }
                 else:
-                    # Try fallback only if not in strict mode
                     if strict:
-                        raise ValueError(f"Could not retrieve properties for '{fluid_name}' with strict=True")
-                    logger.info(f"No properties found via ht for {fluid_name}, using fallback")
-                    fallback_props = get_fluid_properties_fallback(fluid_name, temperature, pressure)
+                        raise ValueError(f"Could not retrieve properties for '{fluid_name}' from thermo with strict=True")
+                    logger.info(f"thermo could not resolve properties for {fluid_name}, using fallback")
+                    fallback_props = get_fluid_properties_fallback(fluid_name, T, P)
                     if fallback_props:
                         result = {
                             "fluid_name": fluid_name,
-                            "temperature_k": temperature,
-                            "pressure_pa": pressure,
+                            "temperature_k": T,
+                            "pressure_pa": P,
                             "density": fallback_props.get("density"),
                             "specific_heat_cp": fallback_props.get("specific_heat_cp"),
                             "thermal_conductivity": fallback_props.get("thermal_conductivity"),
@@ -136,7 +174,7 @@ def get_fluid_properties(
                             "kinematic_viscosity": fallback_props.get("kinematic_viscosity"),
                             "prandtl_number": fallback_props.get("prandtl_number"),
                             "data_source": "fallback_calculations",
-                            "accuracy": "approximate"
+                            "accuracy": "approximate",
                         }
                     else:
                         return json.dumps({
@@ -145,15 +183,14 @@ def get_fluid_properties(
             except Exception as e:
                 if strict:
                     raise
-                logger.error(f"Error in get_fluid_properties with ht: {e}", exc_info=True)
-                
-                # Try fallback
-                fallback_props = get_fluid_properties_fallback(fluid_name, temperature, pressure)
+                logger.error(f"Error obtaining properties with thermo: {e}", exc_info=True)
+                # Fall back to basic approximations
+                fallback_props = get_fluid_properties_fallback(fluid_name, T, P)
                 if fallback_props:
                     result = {
                         "fluid_name": fluid_name,
-                        "temperature_k": temperature,
-                        "pressure_pa": pressure,
+                        "temperature_k": T,
+                        "pressure_pa": P,
                         "density": fallback_props.get("density"),
                         "specific_heat_cp": fallback_props.get("specific_heat_cp"),
                         "thermal_conductivity": fallback_props.get("thermal_conductivity"),
@@ -161,23 +198,23 @@ def get_fluid_properties(
                         "kinematic_viscosity": fallback_props.get("kinematic_viscosity"),
                         "prandtl_number": fallback_props.get("prandtl_number"),
                         "data_source": "fallback_calculations",
-                        "accuracy": "approximate"
+                        "accuracy": "approximate",
                     }
                 else:
                     return json.dumps({
-                        "error": f"Could not retrieve properties for '{fluid_name}' with ht or fallback. Error: {str(e)}"
+                        "error": f"Could not retrieve properties for '{fluid_name}' from thermo or fallback. Error: {str(e)}"
                     })
         else:
-            # Use the fallback function only if not in strict mode
+            # thermo not available: only use fallback if not strict
             if strict:
-                raise ImportError("ht library required with strict=True but not available")
-            logger.info(f"HT library not available, using fallback for {fluid_name}")
-            fallback_props = get_fluid_properties_fallback(fluid_name, temperature, pressure)
+                raise ImportError("thermo library required with strict=True but not available")
+            logger.info(f"Thermo library not available, using fallback for {fluid_name}")
+            fallback_props = get_fluid_properties_fallback(fluid_name, T, P)
             if fallback_props:
                 result = {
                     "fluid_name": fluid_name,
-                    "temperature_k": temperature,
-                    "pressure_pa": pressure,
+                    "temperature_k": T,
+                    "pressure_pa": P,
                     "density": fallback_props.get("density"),
                     "specific_heat_cp": fallback_props.get("specific_heat_cp"),
                     "thermal_conductivity": fallback_props.get("thermal_conductivity"),
@@ -185,7 +222,7 @@ def get_fluid_properties(
                     "kinematic_viscosity": fallback_props.get("kinematic_viscosity"),
                     "prandtl_number": fallback_props.get("prandtl_number"),
                     "data_source": "fallback_calculations",
-                    "accuracy": "approximate"
+                    "accuracy": "approximate",
                 }
             else:
                 return json.dumps({

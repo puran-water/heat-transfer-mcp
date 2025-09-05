@@ -7,6 +7,7 @@ insulation module which contains 390+ materials from VDI and ASHRAE databases.
 
 import json
 import logging
+import math
 from typing import Optional
 
 from utils.import_helpers import HT_AVAILABLE, get_material_thermal_conductivity_fallback
@@ -27,6 +28,33 @@ def get_material_properties(
         JSON string with material properties including thermal conductivity
     """
     try:
+        # Validate material name
+        if not isinstance(material_name, str) or not material_name.strip():
+            return json.dumps({
+                "error": "Material name must be a non-empty string."
+            })
+        name_clean = material_name.strip()
+        if not any(ch.isalpha() for ch in name_clean):
+            return json.dumps({
+                "error": "Material name must contain alphabetic characters (e.g., 'steel', 'concrete')."
+            })
+        
+        # Optional: validate temperature if provided
+        if temperature is not None:
+            try:
+                T = float(temperature)
+            except (TypeError, ValueError):
+                return json.dumps({
+                    "error": "Temperature must be a numeric value in Kelvin when provided."
+                })
+            if T < 0.0:
+                return json.dumps({
+                    "error": "Temperature cannot be below 0 K (absolute zero)."
+                })
+            if not math.isfinite(T):
+                return json.dumps({
+                    "error": "Temperature must be a finite real number."
+                })
         result = {}
         
         if HT_AVAILABLE:
@@ -37,11 +65,11 @@ def get_material_properties(
                 logger.info(f"Attempting to get properties for material '{material_name}' using HT insulation module")
                 
                 # Use fuzzy matching to find the best material match
-                matched_material = nearest_material(material_name)
+                matched_material = nearest_material(name_clean)
                 logger.info(f"Matched '{material_name}' to '{matched_material}'")
                 
                 # Get thermal conductivity
-                k_value = k_material(matched_material, temperature if temperature else None)
+                k_value = k_material(matched_material, T if temperature is not None else None)
                 
                 result = {
                     "material_name": material_name,
@@ -61,7 +89,7 @@ def get_material_properties(
                 
                 # Try to get heat capacity if available
                 try:
-                    cp_value = Cp_material(matched_material, temperature if temperature else None)
+                    cp_value = Cp_material(matched_material, T if temperature is not None else None)
                     if cp_value is not None:
                         result["specific_heat_cp"] = float(cp_value)
                         result["specific_heat_unit"] = "J/(kg·K)"
@@ -70,14 +98,14 @@ def get_material_properties(
                 
                 # Add temperature if specified
                 if temperature is not None:
-                    result["temperature_k"] = temperature
+                    result["temperature_k"] = T
                     
                 logger.info(f"Successfully retrieved properties from HT insulation module")
                 
             except ImportError as e:
                 logger.warning(f"HT insulation module not available: {e}")
                 # Fall back to hardcoded values
-                k_value = get_material_thermal_conductivity_fallback(material_name)
+                k_value = get_material_thermal_conductivity_fallback(name_clean)
                 if k_value is not None:
                     result = {
                         "material_name": material_name,
@@ -92,7 +120,7 @@ def get_material_properties(
             except Exception as e:
                 logger.error(f"Error using HT insulation module: {e}")
                 # Fall back to hardcoded values
-                k_value = get_material_thermal_conductivity_fallback(material_name)
+                k_value = get_material_thermal_conductivity_fallback(name_clean)
                 if k_value is not None:
                     result = {
                         "material_name": material_name,
@@ -106,7 +134,7 @@ def get_material_properties(
         else:
             # HT not available, use fallback
             logger.info(f"HT library not available, using fallback for '{material_name}'")
-            k_value = get_material_thermal_conductivity_fallback(material_name)
+            k_value = get_material_thermal_conductivity_fallback(name_clean)
             if k_value is not None:
                 result = {
                     "material_name": material_name,

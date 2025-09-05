@@ -37,6 +37,10 @@ def calculate_overall_heat_transfer_coefficient(
         JSON string with calculated U-value and related parameters
     """
     # Validate inputs
+    if not isinstance(layers, list) or len(layers) == 0:
+        return json.dumps({
+            "error": "At least one material layer must be provided in 'layers'."
+        })
     if geometry.lower() == 'cylinder' and inner_diameter is None:
         return json.dumps({
             "error": "Inner diameter is required for cylinder geometry."
