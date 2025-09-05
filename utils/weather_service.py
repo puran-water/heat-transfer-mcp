@@ -8,6 +8,7 @@ and returns only essential design values to preserve MCP context.
 from __future__ import annotations
 import json
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -19,6 +20,12 @@ try:
 except ImportError:
     requests = None
 
+try:
+    from cachetools import TTLCache
+except ImportError:
+    # Fallback to simple dict if cachetools not available
+    TTLCache = None
+
 logger = logging.getLogger("heat-transfer-mcp.weather_service")
 
 
@@ -27,9 +34,21 @@ class WeatherDataService:
     returns only essential design values to preserve MCP context."""
     
     def __init__(self):
-        """Initialize the weather data service with an in-memory cache."""
-        self._cache = {}  # In-memory cache for session
-        self._era5_cache = {}  # Separate cache for ERA5 data
+        """Initialize the weather data service with bounded TTL caches."""
+        # Use TTLCache if available, otherwise fallback to dict
+        if TTLCache:
+            # Max 512 entries, 24 hour TTL
+            self._cache = TTLCache(maxsize=512, ttl=86400)  
+            # Max 256 entries for ERA5, 24 hour TTL
+            self._era5_cache = TTLCache(maxsize=256, ttl=86400)
+        else:
+            # Fallback to simple dict (no TTL or size limit)
+            logger.warning("cachetools not available, using unbounded cache")
+            self._cache = {}
+            self._era5_cache = {}
+        
+        # Lock for thread-safe cache access
+        self._lock = threading.Lock()
         
     def get_design_conditions(
         self, 
@@ -96,10 +115,11 @@ class WeatherDataService:
         if isinstance(end_date, str):
             end_date = datetime.strptime(end_date, '%Y-%m-%d')
             
-        # Check cache
+        # Check cache with thread safety
         cache_key = f"{lat}_{lon}_{start_date.date()}_{end_date.date()}_{time_resolution}"
-        if cache_key in self._cache:
-            return self._process_percentiles(self._cache[cache_key], percentiles, cache_key)
+        with self._lock:
+            if cache_key in self._cache:
+                return self._process_percentiles(self._cache[cache_key], percentiles, cache_key)
             
         if not METEOSTAT_AVAILABLE or not PANDAS_AVAILABLE:
             return {
@@ -124,8 +144,9 @@ class WeatherDataService:
                     "location": {"lat": lat, "lon": lon}
                 }
                 
-            # Cache the DataFrame
-            self._cache[cache_key] = df
+            # Cache the DataFrame with thread safety
+            with self._lock:
+                self._cache[cache_key] = df
             
             # Process ALL percentiles internally
             return self._process_percentiles(df, percentiles, cache_key)
@@ -217,9 +238,10 @@ class WeatherDataService:
             rhum_median = df["rhum"].median()
             if pd.notnull(temp_median) and pd.notnull(rhum_median):
                 # Magnus formula approximation
+                import numpy as np
                 a = 17.27
                 b = 237.7
-                alpha = (a * temp_median) / (b + temp_median) + pd.np.log(rhum_median/100)
+                alpha = (a * temp_median) / (b + temp_median) + np.log(rhum_median/100)
                 dew_c = (b * alpha) / (a - alpha)
                 result["concurrent_conditions"]["dew_point_median_c"] = round(float(dew_c), 1)
                 result["concurrent_conditions"]["dew_point_k"] = round(float(dew_c) + 273.15, 2)

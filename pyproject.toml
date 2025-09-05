@@ -26,11 +26,21 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "mcp>=0.5.0",
-    "ht>=1.0.0",
-    "thermo>=0.2.20",
+    "fastmcp>=0.1.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "ht>=1.0.2",
+    "chemicals>=1.1.0",
+    "fluids>=1.0.26",
+    "thermo>=0.3.0",
     "pint>=0.20.0",
+    "meteostat>=1.6.8",
+    "pandas>=2.0.0",
+    "pytz>=2021.1",
     "requests>=2.28.0",
-    "asyncio-mqtt>=0.11.1",
+    "cachetools>=5.3.0",
+    "python-dotenv>=0.19.0",
+    "rich>=10.0.0",
 ]
 
 [project.optional-dependencies]
