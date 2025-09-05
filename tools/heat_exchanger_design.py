@@ -23,6 +23,7 @@ from tools.fluid_properties import get_fluid_properties
 from tools.estimate_hx_physical_dims import estimate_hx_physical_dims
 from tools.size_heat_exchanger_area import size_heat_exchanger_area
 from tools.tank_heat_loss import tank_heat_loss
+from utils.validation import ValidationError, require_positive
 
 logger = logging.getLogger("heat-transfer-mcp.heat_exchanger_design")
 
@@ -116,6 +117,11 @@ def heat_exchanger_design(
             and process_inlet_temp_K is not None
             and process_target_temp_K is not None
         ):
+            # Validate flow
+            try:
+                require_positive(float(process_mass_flow_kg_s), "process_mass_flow_kg_s")
+            except ValidationError as ve:
+                return json.dumps({"error": str(ve)})
             cp = _cp_for(process_fluid, (process_inlet_temp_K + process_target_temp_K) / 2.0) or 4180.0
             process_Q = float(process_mass_flow_kg_s) * cp * (float(process_target_temp_K) - float(process_inlet_temp_K))
             duty_W += process_Q
@@ -132,6 +138,19 @@ def heat_exchanger_design(
         lmt_d = None
         Ft = 1.0
         if None not in (Thi, Tho, Tci, Tco):
+            # Pre-validate temperature approach (counterflow by default)
+            dT1 = Thi - Tco
+            dT2 = Tho - Tci
+            if dT1 <= 0 or dT2 <= 0:
+                return json.dumps({
+                    "error": "Invalid temperature program: temperature crossing yields non-positive LMTD",
+                    "details": {
+                        "Thi": Thi, "Tho": Tho, "Tci": Tci, "Tco": Tco,
+                        "deltaT_hot_in_minus_cold_out": dT1,
+                        "deltaT_hot_out_minus_cold_in": dT2,
+                        "hint": "Ensure hot side is always hotter than cold side at both ends or swap streams/arrangement."
+                    }
+                })
             lmt_d = _lmtd(Thi, Tho, Tci, Tco)
             if HT_AVAILABLE and not math.isnan(lmt_d):
                 try:
@@ -144,6 +163,8 @@ def heat_exchanger_design(
 
         # Default U if not provided (typical clean water-water)
         U = float(overall_U_W_m2K) if overall_U_W_m2K is not None else 1000.0
+        if U <= 0:
+            return json.dumps({"error": "overall_U_W_m2K must be > 0 when provided"})
 
         area_m2 = None
         UA = None
@@ -185,4 +206,3 @@ def heat_exchanger_design(
     except Exception as e:
         logger.error(f"heat_exchanger_design failed: {e}", exc_info=True)
         return json.dumps({"error": str(e)})
-

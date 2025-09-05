@@ -36,6 +36,12 @@ from utils.constants import STEFAN_BOLTZMANN
 # Reuse existing tool functions
 from tools.surface_heat_transfer import calculate_surface_heat_transfer
 from tools.ground_heat_loss import calculate_ground_heat_loss
+from utils.validation import (
+    ValidationError,
+    require_positive,
+    require_non_negative,
+    validate_geometry_dimensions,
+)
 
 logger = logging.getLogger("heat-transfer-mcp.tank_heat_loss")
 
@@ -518,6 +524,17 @@ def tank_heat_loss(
         Includes 'calculation_methods' and 'inputs_used' for traceability.
     """
     try:
+        # Validate key numeric inputs early
+        try:
+            validate_geometry_dimensions(geometry, dimensions)
+            require_non_negative(headspace_height_m, "headspace_height_m")
+            if wind_speed is not None:
+                require_non_negative(float(wind_speed), "wind_speed")
+            if insulation_R_value_si is not None and float(insulation_R_value_si) < 0:
+                raise ValidationError("insulation_R_value_si must be >= 0 (0 means no insulation)")
+        except ValidationError as ve:
+            return json.dumps({"error": str(ve)})
+
         # Prepare ambient
         ambient, ambient_info = _ambient_from_inputs(
             ambient_air_temperature=ambient_air_temperature,
@@ -633,6 +650,8 @@ def tank_heat_loss(
             # Headspace modeling - split tank into zones
             diameter = dimensions.get('diameter', 0)
             height = dimensions.get('height', dimensions.get('length', 0))
+            if headspace_height_m >= height:
+                return json.dumps({"error": "headspace_height_m must be less than total height/length"})
             
             # Calculate zone areas
             liquid_height = max(0, height - headspace_height_m)
@@ -787,6 +806,7 @@ def tank_heat_loss(
 
         result = {
             "total_heat_loss_w": total_Q,
+            "sign_convention": "Positive = heat loss to ambient; Negative = heat gain from ambient",
             "above_ground_surface_loss_w": surface_data.get("total_heat_rate_loss_w", 0.0),
             "convective_heat_rate_w": surface_data.get("convective_heat_rate_w", None),
             "radiative_heat_rate_w": surface_data.get("radiative_heat_rate_w", None),

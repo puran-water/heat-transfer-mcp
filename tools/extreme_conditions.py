@@ -17,6 +17,12 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from utils.import_helpers import METEOSTAT_AVAILABLE, PANDAS_AVAILABLE
+from utils.validation import (
+    ValidationError,
+    validate_lat_lon,
+    validate_date_range,
+    ensure_list_nonempty,
+)
 
 logger = logging.getLogger("heat-transfer-mcp.extreme_conditions")
 
@@ -63,10 +69,19 @@ def extreme_conditions(
         elif "sydney" in name:
             latitude, longitude = -33.8688, 151.2093
 
-    if latitude is None or longitude is None:
-        return json.dumps({"error": "latitude and longitude are required (or a recognized location_name)"})
-    if not start_date or not end_date:
-        return json.dumps({"error": "start_date and end_date are required in YYYY-MM-DD format"})
+    # Validate coordinates and dates
+    try:
+        validate_lat_lon(latitude, longitude)
+        validate_date_range(start_date, end_date)
+        ensure_list_nonempty("percentiles", percentiles)
+        # Validate percentile values are within (0,1)
+        for p in percentiles:
+            if not (0.0 < float(p) < 1.0):
+                raise ValidationError(f"percentile values must be between 0 and 1 (exclusive); got {p}")
+        if time_resolution.lower() not in {"daily", "hourly"}:
+            raise ValidationError("time_resolution must be 'daily' or 'hourly'")
+    except ValidationError as ve:
+        return json.dumps({"error": str(ve)})
 
     if not METEOSTAT_AVAILABLE or not PANDAS_AVAILABLE:
         return json.dumps({
@@ -180,4 +195,3 @@ def extreme_conditions(
     except Exception as e:
         logger.error(f"extreme_conditions failed: {e}", exc_info=True)
         return json.dumps({"error": str(e)})
-

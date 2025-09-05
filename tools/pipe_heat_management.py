@@ -18,6 +18,11 @@ from typing import Any, Dict, List, Optional
 from tools.surface_heat_transfer import calculate_surface_heat_transfer
 from tools.buried_object_heat_loss import calculate_buried_object_heat_loss
 from tools.overall_heat_transfer import calculate_overall_heat_transfer_coefficient
+from utils.validation import (
+    ValidationError,
+    require_positive,
+    require_non_negative,
+)
 
 logger = logging.getLogger("heat-transfer-mcp.pipe_heat_management")
 
@@ -118,6 +123,14 @@ def pipe_heat_management(
         JSON with heat loss per meter and requested design outputs.
     """
     try:
+        # Basic input validation
+        try:
+            require_positive(float(outer_diameter_m), "outer_diameter_m")
+            require_positive(float(length_m), "length_m")
+            require_non_negative(float(wind_speed_m_s), "wind_speed_m_s")
+        except ValidationError as ve:
+            return json.dumps({"error": str(ve)})
+
         installation_lower = (installation or "above_ground").lower()
         if installation_lower not in {"above_ground", "buried"}:
             return json.dumps({"error": f"Unsupported installation: {installation}"})
@@ -167,7 +180,7 @@ def pipe_heat_management(
             if "error" in obj:
                 return json.dumps(obj)
             q_total = obj.get("total_heat_loss_watts", 0.0)
-            q_loss_w_m = q_total / float(length_m) if length_m > 0 else 0.0
+            q_loss_w_m = q_total / float(length_m)
             result["heat_loss_per_length_w_m"] = q_loss_w_m
             result["buried_details"] = obj
 
@@ -225,4 +238,3 @@ def pipe_heat_management(
     except Exception as e:
         logger.error(f"pipe_heat_management failed: {e}", exc_info=True)
         return json.dumps({"error": str(e)})
-

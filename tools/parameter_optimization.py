@@ -16,6 +16,11 @@ from typing import Any, Dict, List, Optional, Callable
 from tools.tank_heat_loss import tank_heat_loss
 from tools.heat_exchanger_design import heat_exchanger_design
 from tools.pipe_heat_management import pipe_heat_management
+from utils.validation import (
+    ValidationError,
+    ensure_list_nonempty,
+    set_in_path,
+)
 
 logger = logging.getLogger("heat-transfer-mcp.parameter_optimization")
 
@@ -64,9 +69,17 @@ def parameter_optimization(
         return json.dumps({"error": f"Unsupported tool_name: {tool_name}"})
     tool = TOOL_REGISTRY[tool_name]
 
-    # Build Cartesian product of sweep values
-    keys = list(sweep.keys())
-    values_list = [sweep[k] for k in keys]
+    # Validate sweep structure
+    try:
+        if not isinstance(sweep, dict) or len(sweep) == 0:
+            raise ValidationError("sweep must be a non-empty dict of parameter lists")
+        keys = list(sweep.keys())
+        values_list = []
+        for k in keys:
+            ensure_list_nonempty(f"sweep['{k}']", sweep[k])
+            values_list.append(sweep[k])
+    except ValidationError as ve:
+        return json.dumps({"error": str(ve)})
     combos = list(itertools.product(*values_list))
 
     evaluated: List[Dict[str, Any]] = []
@@ -99,7 +112,15 @@ def parameter_optimization(
     for combo in combos:
         params = dict(base_params)
         for k, v in zip(keys, combo):
-            params[k] = v
+            # Support nested keys with dot-paths
+            if "." in k:
+                try:
+                    set_in_path(params, k, v)
+                except ValidationError as ve:
+                    evaluated.append({"params": params, "error": str(ve)})
+                    continue
+            else:
+                params[k] = v
         try:
             raw = tool(**params)
             res = json.loads(raw)
@@ -131,4 +152,3 @@ def parameter_optimization(
         "evaluated_count": len(evaluated),
         "feasible_count": len(feas_sorted),
     })
-

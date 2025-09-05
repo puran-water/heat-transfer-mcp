@@ -16,6 +16,11 @@ from utils.helpers import calculate_radiation_heat_transfer, estimate_sky_temper
 from tools.convection_coefficient import calculate_convection_coefficient
 from tools.material_properties import get_material_properties
 from tools.overall_heat_transfer import calculate_overall_heat_transfer_coefficient
+from utils.validation import (
+    ValidationError,
+    require_non_negative,
+    validate_geometry_dimensions,
+)
 
 logger = logging.getLogger("heat-transfer-mcp.surface_heat_transfer")
 
@@ -56,12 +61,13 @@ def calculate_surface_heat_transfer(
     Returns:
         JSON string with calculated heat transfer results
     """
-    # Validate inputs
-    if overall_heat_transfer_coefficient_U is None and wall_layers is None:
-        return json.dumps({
-            "error": "Either 'overall_heat_transfer_coefficient_U' or 'wall_layers' must be provided."
-        })
-    
+    # Basic input validation (allow no layers/U => internal convection only)
+    try:
+        require_non_negative(float(wind_speed), "wind_speed")
+        validate_geometry_dimensions(geometry, dimensions)
+    except ValidationError as ve:
+        return json.dumps({"error": str(ve)})
+
     if include_solar_gain and incident_solar_radiation is None:
         return json.dumps({
             "error": "Incident solar radiation is required when include_solar_gain is True."
@@ -134,85 +140,68 @@ def calculate_surface_heat_transfer(
         # Initial calculation of external convection coefficient
         # Will be updated during iteration
         
-        # Calculate internal thermal resistance if wall_layers provided
-        if wall_layers is not None:
-            # Need to determine internal h and wall resistance
-            # For simplicity, use typical values for internal convection
-            if fluid_name_internal.lower() == "water":
-                h_inner_assumed = 1000.0  # W/m²K (typical for water)
-            else:
-                h_inner_assumed = 100.0  # W/m²K (moderate value for other fluids)
-            
-            # Calculate thermal resistance between internal fluid and outer surface
-            if 'cylinder' in geometry_lower or 'pipe' in geometry_lower:
-                # Use overall_heat_transfer tool for cylindrical calculation
-                # Important: Do NOT include external convection in this calculation
-                # to avoid double-counting
-                inner_diameter = dimensions.get('inner_diameter')
-                if inner_diameter is None:
-                    # Estimate inner diameter from outer diameter and wall thickness
-                    total_wall_thickness = sum(layer.get('thickness', 0) for layer in wall_layers)
-                    inner_diameter = diameter - 2 * total_wall_thickness
-                
-                # Calculate resistance ending at outer surface (no external convection)
-                u_value_json = calculate_overall_heat_transfer_coefficient(
-                    geometry='cylinder',
-                    layers=wall_layers,
-                    inner_convection_coefficient_h=h_inner_assumed,
-                    outer_convection_coefficient_h=1e10,  # Effectively infinite to exclude external resistance
-                    inner_diameter=inner_diameter,
-                    outer_diameter=diameter
-                )
-                u_value_data = json.loads(u_value_json)
-                
-                if "error" in u_value_data:
-                    return json.dumps({
-                        "error": f"Failed to calculate overall heat transfer coefficient: {u_value_data['error']}"
-                    })
-                
-                # Extract the per-length resistances and convert to area-based
-                # Get the resistance from inner fluid to outer surface
-                R_conv_inner_per_L = u_value_data.get('convection_resistance_inner_per_length_mk_w', 0)
-                R_cond_total_per_L = u_value_data.get('conduction_resistance_total_per_length_mk_w', 0)
-                r_outer = diameter / 2
-                
-                # Convert per-length resistances to area-based resistance
-                # Area per unit length for cylinder: 2πr
-                A_out_per_L = 2 * math.pi * r_outer
-                R_internal_plus_wall = (R_conv_inner_per_L + R_cond_total_per_L) * A_out_per_L / outer_surface_area
-                
-            else:  # Flat wall
-                # Calculate flat wall resistance
-                R_wall_total = 0.0
-                for layer in wall_layers:
-                    thickness = layer.get('thickness')
-                    k = layer.get('thermal_conductivity_k')
-                    material_name = layer.get('material_name')
-                    
-                    if k is None and material_name:
-                        # Look up material properties
-                        material_props_json = get_material_properties(material_name)
-                        material_props = json.loads(material_props_json)
-                        
-                        if "error" in material_props:
-                            return json.dumps({
-                                "error": f"Failed to get material properties: {material_props['error']}"
-                            })
-                        
-                        k = material_props.get("thermal_conductivity_k")
-                    
-                    if thickness is None or k is None:
-                        return json.dumps({
-                            "error": f"Missing thickness or thermal conductivity for wall layer."
-                        })
-                    
-                    R_wall_total += thickness / k
-                
-                # Total resistance is sum of internal convection and wall conduction
-                R_internal_plus_wall = 1.0 / h_inner_assumed + R_wall_total
+        # Determine internal convection estimate regardless of wall specification
+        if fluid_name_internal.lower() == "water":
+            h_inner_assumed = 1000.0  # W/m²K (typical for water)
         else:
+            h_inner_assumed = 100.0  # W/m²K (moderate value for other fluids)
+
+        # Calculate internal thermal resistance path
+        if overall_heat_transfer_coefficient_U is not None:
             # Use the provided U-value directly
-            R_internal_plus_wall = 1.0 / overall_heat_transfer_coefficient_U
+            R_internal_plus_wall = 1.0 / float(overall_heat_transfer_coefficient_U)
+        else:
+            # wall_layers may be None or empty -> treat as no wall conduction
+            if wall_layers and len(wall_layers) > 0:
+                if 'cylinder' in geometry_lower or 'pipe' in geometry_lower:
+                    # Use overall_heat_transfer tool for cylindrical calculation excluding external convection
+                    inner_diameter = dimensions.get('inner_diameter')
+                    if inner_diameter is None:
+                        total_wall_thickness = sum(layer.get('thickness', 0) for layer in wall_layers)
+                        inner_diameter = diameter - 2 * total_wall_thickness
+
+                    u_value_json = calculate_overall_heat_transfer_coefficient(
+                        geometry='cylinder',
+                        layers=wall_layers,
+                        inner_convection_coefficient_h=h_inner_assumed,
+                        outer_convection_coefficient_h=1e10,  # exclude external resistance
+                        inner_diameter=inner_diameter,
+                        outer_diameter=diameter
+                    )
+                    u_value_data = json.loads(u_value_json)
+                    if "error" in u_value_data:
+                        return json.dumps({
+                            "error": f"Failed to calculate overall heat transfer coefficient: {u_value_data['error']}"
+                        })
+                    R_conv_inner_per_L = u_value_data.get('convection_resistance_inner_per_length_mk_w', 0)
+                    R_cond_total_per_L = u_value_data.get('conduction_resistance_total_per_length_mk_w', 0)
+                    r_outer = diameter / 2
+                    A_out_per_L = 2 * math.pi * r_outer
+                    R_internal_plus_wall = (R_conv_inner_per_L + R_cond_total_per_L) * A_out_per_L / outer_surface_area
+                else:
+                    # Flat wall path
+                    R_wall_total = 0.0
+                    for layer in wall_layers:
+                        thickness = layer.get('thickness')
+                        k = layer.get('thermal_conductivity_k')
+                        material_name = layer.get('material_name')
+                        if k is None and material_name:
+                            material_props_json = get_material_properties(material_name)
+                            material_props = json.loads(material_props_json)
+                            if "error" in material_props:
+                                return json.dumps({
+                                    "error": f"Failed to get material properties: {material_props['error']}"
+                                })
+                            k = material_props.get("thermal_conductivity_k")
+                        if thickness is None or k is None:
+                            return json.dumps({
+                                "error": f"Missing thickness or thermal conductivity for wall layer."
+                            })
+                        R_wall_total += thickness / k
+                    R_internal_plus_wall = 1.0 / h_inner_assumed + R_wall_total
+            else:
+                # No layers provided -> internal convection only
+                R_internal_plus_wall = 1.0 / h_inner_assumed
         
         # Iteration to find Ts_outer and heat transfer rates
         prev_balance_diff = float('inf')
