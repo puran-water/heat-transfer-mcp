@@ -49,24 +49,33 @@ This MCP server provides 5 consolidated omnitools that encapsulate thermal engin
 - **Constraint-Based Design**: Meet target heat loss with minimum insulation
 - **Multi-Variable Analysis**: Cartesian product of parameter combinations
 
-## Critical Bug Fixes (December 2024)
+## Recent Improvements (December 2024)
 
-### Surface Heat Transfer Solver
-- **Fixed**: Cylindrical resistance double-counting causing convergence failures
-- **Fixed**: Vertical cylinder area calculation now includes both endcaps
-- **Fixed**: Dimensional consistency in convergence tolerance (Watts instead of Kelvin)
-- **Fixed**: Natural convection switching for wind speeds ≤ 0.2 m/s
-- **Fixed**: Pipe geometry now uses cylindrical conduction model
+### Critical Validation Framework
+- **New**: Comprehensive input validation module preventing physically invalid parameters
+- **Fixed**: Negative dimensions, flow rates, and R-values now properly rejected
+- **Fixed**: Temperature crossing detection for heat exchangers with detailed error messages
+- **Fixed**: Geographic coordinate bounds validation (latitude ±90°, longitude ±180°)
+- **Fixed**: Date range validation ensuring start_date ≤ end_date
 
-### Weather and Percentiles
-- **Fixed**: Date parsing for Meteostat API (string to datetime conversion)
-- **Fixed**: Cold percentile logic (p99 cold design uses 0.01 quantile)
-- **Fixed**: Concurrent extremes calculation for cold+windy conditions
+### Area/Resistance Calculation Fixes
+- **Fixed**: Cylindrical resistance calculation error causing 1000x heat loss overestimation
+- **Fixed**: Vertical tank bottom now properly excluded from air-exposed area (ground contact)
+- **Fixed**: Double-counting of gas-liquid interface area in headspace calculations
+- **Fixed**: Automatic ground heat loss calculation for vertical cylindrical tanks
+
+### Heat Trace Sizing Improvements
+- **New**: Steady-state heat trace mode returns actual loss at maintenance temperature
+- **New**: Dedicated `freeze_protection_w_per_m` mode with automatic safety factors
+- **New**: Catalog rounding to standard heat trace ratings (5, 10, 15, 20, 25 W/m)
+- **New**: Clear output fields distinguishing steady-state vs delta power requirements
+- **Fixed**: Heat trace now correctly sized as steady-state loss at target temperature
 
 ### Headspace Modeling
 - **New**: Two-zone model for digesters and tanks with gas headspace
 - **New**: Separate heat loss calculation for wetted walls vs gas-exposed surfaces
 - **New**: Configurable inner convection coefficient for gas spaces (default 5 W/m²K)
+- **Fixed**: Headspace convection coefficient now properly applied via override parameter
 
 ## Installation
 
@@ -138,14 +147,20 @@ Size heat exchangers integrated with tank heat loss calculations.
 - `overall_U_W_m2K`: Overall heat transfer coefficient
 
 #### pipe_heat_management
-Pipe insulation and heat trace calculations.
+Pipe insulation and heat trace calculations with freeze protection sizing.
 
 **Parameters:**
-- `outer_diameter_m`: Pipe outer diameter including insulation
-- `length_m`: Pipe length
-- `internal_temperature_K`: Fluid temperature
-- `wall_layers`: Insulation layers
-- `solve_for`: Optional ("heat_trace_w_per_m", "freeze_time_h")
+- `outer_diameter_m`: Pipe outer diameter including insulation (m)
+- `length_m`: Pipe length (m)
+- `internal_temperature_K`: Fluid temperature (K)
+- `wall_layers`: Insulation layers with thickness and conductivity
+- `solve_for`: Calculation modes:
+  - `"heat_trace_w_per_m"`: Steady-state heat trace at target temperature
+  - `"freeze_protection_w_per_m"`: Heat trace with safety factor and catalog rounding
+  - `"heat_trace_delta_w_per_m"`: Delta power between temperatures (informational)
+  - `"freeze_time_h"`: Time to freeze without heat trace
+- `target_temperature_K`: Maintenance temperature for heat trace sizing
+- `heat_trace_safety_factor`: Safety factor for recommendations (default 1.25)
 - `installation`: "above_ground" or "buried"
 
 #### parameter_optimization
@@ -170,32 +185,52 @@ Weather extremes and design day selection.
 
 ## Validation Examples
 
-### Anaerobic Digester with Headspace
+### Anaerobic Digester with Ground Contact
 ```python
 tank_heat_loss(
     geometry="vertical_cylinder_tank",
-    dimensions={"diameter": 15, "height": 10},
-    contents_temperature=311.15,  # 38°C
-    headspace_height_m=1.5,  # Biogas space
+    dimensions={"diameter": 24.69, "height": 10.06},  # 81ft diameter
+    contents_temperature=310.93,  # 100°F
+    headspace_height_m=1.83,  # 6ft biogas space
     headspace_fluid="biogas",
-    insulation_R_value_si=3.0,
-    latitude=40.7128,
-    longitude=-74.0060,
-    design_percentile=0.99
+    headspace_h_inner_override_w_m2k=5.0,  # Stagnant gas
+    insulation_R_value_si=1.76,  # R-10 imperial
+    ambient_air_temperature=264.15,  # -9°C design
+    wind_speed=6.63,
+    average_external_air_temperature=283.15  # Annual average
 )
-# Result: 508 kW total loss (362 kW wetted, 146 kW headspace)
+# Result: 32 kW total (30.9 kW above-ground, 1.5 kW ground)
+```
+
+### Pipe Freeze Protection Sizing
+```python
+pipe_heat_management(
+    outer_diameter_m=0.1651,  # 4" pipe + 1" insulation
+    length_m=30,
+    internal_temperature_K=288.71,  # 60°F normal
+    ambient_air_temperature_K=258.15,  # 5°F extreme
+    wind_speed_m_s=8.14,
+    wall_layers=[{"thickness": 0.0254, "thermal_conductivity_k": 0.043}],
+    solve_for="freeze_protection_w_per_m"
+)
+# Result: 16.4 W/m required, 25 W/m catalog selection with safety factor
 ```
 
 ### Insulation Optimization
 ```python
 parameter_optimization(
     tool_name="tank_heat_loss",
-    base_params={...},
-    sweep={"insulation_R_value_si": [0, 1, 2, 3, 4, 5, 10, 20]},
+    base_params={
+        "geometry": "vertical_cylinder_tank",
+        "dimensions": {"diameter": 10, "height": 8},
+        "contents_temperature": 350,
+        "ambient_air_temperature": 270
+    },
+    sweep={"insulation_R_value_si": [0, 0.5, 1, 2, 3, 4, 5, 10]},
     objective_key="total_heat_loss_w",
     direction="minimize"
 )
-# Result: Diminishing returns above R=4 (6-7 kW saved per R-unit)
+# Result: Optimal at R=3-4, diminishing returns above (△Q < 10% per R-unit)
 ```
 
 ## Performance Characteristics

@@ -39,6 +39,7 @@ def calculate_surface_heat_transfer(
     incident_solar_radiation: Optional[float] = None,
     surface_absorptivity: float = 0.8,
     sky_temperature: Optional[float] = None,
+    internal_convection_coefficient_h_override: Optional[float] = None,
 ) -> str:
     """Calculates net heat loss/gain from an external surface considering convection and radiation.
     
@@ -84,8 +85,10 @@ def calculate_surface_heat_transfer(
         
         if ('cylinder_tank' in geometry_lower or 'tank' in geometry_lower) and diameter and height:
             if 'vertical' in geometry_lower:
-                # Vertical cylinder - includes both endcaps
-                outer_surface_area = math.pi * diameter * height + 2 * math.pi * (diameter/2)**2
+                # Vertical cylinder tanks: walls + top cap only (bottom is ground-contact)
+                lateral_area = math.pi * diameter * height
+                top_cap_area = math.pi * (diameter/2)**2
+                outer_surface_area = lateral_area + top_cap_area
             elif 'horizontal' in geometry_lower:
                 # Horizontal cylinder
                 outer_surface_area = math.pi * diameter * length + 2 * math.pi * (diameter/2)**2
@@ -141,10 +144,13 @@ def calculate_surface_heat_transfer(
         # Will be updated during iteration
         
         # Determine internal convection estimate regardless of wall specification
-        if fluid_name_internal.lower() == "water":
-            h_inner_assumed = 1000.0  # W/m²K (typical for water)
+        if internal_convection_coefficient_h_override is not None:
+            h_inner_assumed = float(internal_convection_coefficient_h_override)
         else:
-            h_inner_assumed = 100.0  # W/m²K (moderate value for other fluids)
+            if fluid_name_internal.lower() == "water":
+                h_inner_assumed = 1000.0  # W/m²K (typical for water)
+            else:
+                h_inner_assumed = 100.0  # W/m²K (moderate value for other fluids)
 
         # Calculate internal thermal resistance path
         if overall_heat_transfer_coefficient_U is not None:
@@ -177,7 +183,8 @@ def calculate_surface_heat_transfer(
                     R_cond_total_per_L = u_value_data.get('conduction_resistance_total_per_length_mk_w', 0)
                     r_outer = diameter / 2
                     A_out_per_L = 2 * math.pi * r_outer
-                    R_internal_plus_wall = (R_conv_inner_per_L + R_cond_total_per_L) * A_out_per_L / outer_surface_area
+                    # Convert per-length resistance (K·m/W) to area-based (K·m²/W) by multiplying by outer area per unit length
+                    R_internal_plus_wall = (R_conv_inner_per_L + R_cond_total_per_L) * A_out_per_L
                 else:
                     # Flat wall path
                     R_wall_total = 0.0

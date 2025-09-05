@@ -231,6 +231,7 @@ def _run_surface_solver(
     fluid_name_external: str,
     wall_layers: Optional[List[Dict[str, Any]]],
     overall_heat_transfer_coefficient_U: Optional[float],
+    h_inner_override_w_m2k: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Delegate to the existing surface solver and parse JSON output into dict."""
     try:
@@ -249,6 +250,7 @@ def _run_surface_solver(
             incident_solar_radiation=ambient.solar_irradiance_W_m2,
             surface_absorptivity=0.8,
             sky_temperature=ambient.T_sky_K,
+            internal_convection_coefficient_h_override=h_inner_override_w_m2k,
         )
         data = json.loads(res_json)
         return data
@@ -708,6 +710,7 @@ def tank_heat_loss(
                 fluid_name_external=fluid_name_external,
                 wall_layers=base_layers,
                 overall_heat_transfer_coefficient_U=None,
+                h_inner_override_w_m2k=h_inner_headspace,
             )
             
             # Combine results
@@ -716,22 +719,39 @@ def tank_heat_loss(
             if "error" in dry_data:
                 return json.dumps({"error": f"Dry zone: {dry_data['error']}"})
             
-            # Scale heat losses by area ratios (since solver assumes full cylinder)
-            wetted_q = wetted_data.get('total_heat_rate_loss_w', 0)
-            dry_q = dry_data.get('total_heat_rate_loss_w', 0)
+            # Extract zone totals
+            wetted_q = wetted_data.get('total_heat_rate_loss_w', 0.0)
+            dry_q = dry_data.get('total_heat_rate_loss_w', 0.0)
+            wetted_conv = wetted_data.get('convective_heat_rate_w', 0.0)
+            dry_conv = dry_data.get('convective_heat_rate_w', 0.0)
+            wetted_rad = wetted_data.get('radiative_heat_rate_w', 0.0)
+            dry_rad = dry_data.get('radiative_heat_rate_w', 0.0)
+
+            # Remove the interior gas/liquid interface contribution (not an external surface)
+            # With updated surface area logic, the interface disc is only present in the wetted zone model.
+            interface_area = math.pi * (diameter/2)**2
+            wetted_area_model = max(wetted_data.get('outer_surface_area_m2', wetted_total_area), 1e-9)
+            qpp_w_total = wetted_q / wetted_area_model
+            qpp_w_conv = wetted_conv / wetted_area_model
+            qpp_w_rad = wetted_rad / wetted_area_model
+
+            total_surface_q = wetted_q + dry_q - interface_area * qpp_w_total
+            total_conv_q = wetted_conv + dry_conv - interface_area * qpp_w_conv
+            total_rad_q = wetted_rad + dry_rad - interface_area * qpp_w_rad
             
-            # Total heat loss
-            total_surface_q = wetted_q + dry_q
-            
+            # Air-exposed areas only (exclude bottom)
+            air_exposed_area = wetted_wall_area + dry_wall_area + roof_area
             surface_data = {
                 'total_heat_rate_loss_w': total_surface_q,
-                'convective_heat_rate_w': wetted_data.get('convective_heat_rate_w', 0) + dry_data.get('convective_heat_rate_w', 0),
-                'radiative_heat_rate_w': wetted_data.get('radiative_heat_rate_w', 0) + dry_data.get('radiative_heat_rate_w', 0),
+                'convective_heat_rate_w': total_conv_q,
+                'radiative_heat_rate_w': total_rad_q,
                 'solar_gain_rate_w': wetted_data.get('solar_gain_rate_w', 0) + dry_data.get('solar_gain_rate_w', 0),
-                'estimated_outer_surface_temp_k': (wetted_data.get('estimated_outer_surface_temp_k', 0) * wetted_total_area + 
-                                                    dry_data.get('estimated_outer_surface_temp_k', 0) * dry_total_area) / (wetted_total_area + dry_total_area),
+                'estimated_outer_surface_temp_k': (
+                    (wetted_data.get('estimated_outer_surface_temp_k', 0) * wetted_wall_area) +
+                    (dry_data.get('estimated_outer_surface_temp_k', 0) * (dry_wall_area + roof_area))
+                ) / max(air_exposed_area, 1e-9),
                 'estimated_outer_surface_temp_c': None,  # Will calculate below
-                'outer_surface_area_m2': wetted_total_area + dry_total_area,
+                'outer_surface_area_m2': air_exposed_area,
                 'external_convection_coefficient_w_m2k': wetted_data.get('external_convection_coefficient_w_m2k'),
                 'internal_plus_wall_resistance_k_w': wetted_data.get('internal_plus_wall_resistance_k_w'),
                 'headspace_info': {
@@ -739,8 +759,8 @@ def tank_heat_loss(
                     'liquid_height_m': liquid_height,
                     'gas_temp_estimate_k': gas_temp_K,
                     'gas_temp_estimate_c': gas_temp_K - 273.15,
-                    'wetted_area_m2': wetted_total_area,
-                    'dry_area_m2': dry_total_area,
+                    'wetted_area_m2': wetted_wall_area,  # air-exposed wetted wall only
+                    'dry_area_m2': dry_wall_area + roof_area,
                     'wetted_heat_loss_w': wetted_q,
                     'dry_heat_loss_w': dry_q,
                     'h_inner_headspace_w_m2k': h_inner_headspace,
@@ -763,10 +783,35 @@ def tank_heat_loss(
             if "error" in surface_data:
                 return json.dumps({"error": surface_data["error"]})
 
-        # Optional ground/foundation coupling
+        # Ground/foundation coupling
+        geometry_l = (geometry or "").lower()
+        is_vertical_tank = ("vertical" in geometry_l and "tank" in geometry_l)
+        effective_include_ground = include_ground_contact or is_vertical_tank
+
+        # Build auto ground config for bottom contact if needed
+        effective_ground_config: Optional[Dict[str, Any]] = None
+        if effective_include_ground:
+            effective_ground_config = dict(ground_config) if isinstance(ground_config, dict) else {}
+            # If no dimensions provided, derive from circular bottom area -> square with same area
+            g_dims = effective_ground_config.get("dimensions") or {}
+            if not g_dims:
+                d = dimensions.get("diameter")
+                if d is not None and float(d) > 0:
+                    r = float(d) / 2.0
+                    bottom_area = math.pi * r * r
+                    side = math.sqrt(bottom_area)
+                    g_dims = {"length": side, "width": side}
+                    effective_ground_config["dimensions"] = g_dims
+            if not effective_ground_config.get("structure_type"):
+                effective_ground_config["structure_type"] = "slab_on_grade"
+            if effective_ground_config.get("soil_conductivity") is None:
+                effective_ground_config["soil_conductivity"] = 0.8  # W/m·K fallback for soil
+            if effective_ground_config.get("insulation_R_value_si") is None and insulation_R_value_si is not None:
+                effective_ground_config["insulation_R_value_si"] = float(insulation_R_value_si)
+
         ground_info = _add_ground_loss_if_requested(
-            include_ground=include_ground_contact,
-            ground_config=ground_config,
+            include_ground=effective_include_ground,
+            ground_config=effective_ground_config,
             contents_temperature=contents_temperature,
             average_external_air_temperature=average_external_air_temperature,
         )
@@ -835,7 +880,7 @@ def tank_heat_loss(
                 "insulation_R_value_si": insulation_R_value_si,
                 "assumed_insulation_k_w_mk": assumed_insulation_k_w_mk,
                 "include_solar_gain": include_solar_gain,
-                "include_ground_contact": include_ground_contact,
+                "include_ground_contact": effective_include_ground,
                 "headspace_height_m": headspace_height_m,
                 "headspace_fluid": headspace_fluid,
             },
