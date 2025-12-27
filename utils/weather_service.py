@@ -3,6 +3,18 @@ WeatherDataService for efficient context-aware weather data fetching.
 
 This service fetches weather data once per location, computes all statistics internally,
 and returns only essential design values to preserve MCP context.
+
+KNOWN METEOSTAT DATA QUALITY NOTES:
+- Issue #202: Station last data record dates may be inaccurate
+- Issue #201: Station data may differ from official sources (e.g., DWD for Germany)
+- Issue #148: Point interpolation using weighted method may have errors
+- Issue #171: PermissionError may occur in certain deployment environments (Docker/cloud)
+
+Mitigations implemented:
+1. Data quality validation for minimum data point thresholds
+2. Fallback to ERA5 reanalysis for missing dew point data
+3. Caching to reduce repeated API calls
+4. Explicit warnings when data quality thresholds are not met
 """
 
 from __future__ import annotations
@@ -156,32 +168,69 @@ class WeatherDataService:
             return {"error": str(e)}
             
     def _process_percentiles(
-        self, 
+        self,
         df: Any,  # pandas DataFrame
         percentiles: List[float],
         cache_key: str
     ) -> Dict[str, Any]:
         """Process data internally, return only design values."""
         import pandas as pd
-        
+
         # Extract metadata
         parts = cache_key.split('_')
         lat, lon = float(parts[0]), float(parts[1])
         start_str = parts[2]
         end_str = parts[3]
         resolution = parts[4] if len(parts) > 4 else "daily"
-        
+
+        # Data quality checks
+        warnings = []
+        data_quality = "good"
+
+        # Check for minimum data points (at least 2 years of daily data = ~730 points)
+        min_daily_points = 730
+        min_hourly_points = 730 * 24  # ~17,520 hourly points for 2 years
+
+        if resolution == "daily" and len(df) < min_daily_points:
+            if len(df) < 365:
+                data_quality = "poor"
+                warnings.append(f"Only {len(df)} data points available (< 1 year). Results may be unreliable.")
+            else:
+                data_quality = "moderate"
+                warnings.append(f"Only {len(df)} data points available (< 2 years). Consider using a longer date range.")
+        elif resolution == "hourly" and len(df) < min_hourly_points:
+            data_quality = "moderate"
+            warnings.append(f"Limited hourly data: {len(df)} points. Daily resolution may be more reliable.")
+
+        # Check for missing data percentage
+        if len(df) > 0:
+            # Calculate expected date range
+            try:
+                start_dt = datetime.strptime(start_str, '%Y-%m-%d')
+                end_dt = datetime.strptime(end_str, '%Y-%m-%d')
+                expected_days = (end_dt - start_dt).days + 1
+                if resolution == "daily":
+                    coverage = len(df) / expected_days * 100
+                    if coverage < 80:
+                        warnings.append(f"Data coverage is {coverage:.0f}% (gaps detected). Meteostat station data may be incomplete.")
+                        if coverage < 50:
+                            data_quality = "poor"
+            except Exception:
+                pass
+
         result = {
             "location": {"lat": lat, "lon": lon},
             "data_summary": {
                 "source": "meteostat",
                 "date_range": f"{start_str} to {end_str}",
                 "data_points": len(df),
-                "resolution": resolution
+                "resolution": resolution,
+                "data_quality": data_quality,
             },
             "design_conditions": {},
             "concurrent_conditions": {},
-            "annual_average_c": None
+            "annual_average_c": None,
+            "warnings": warnings if warnings else None,
         }
         
         # Temperature percentiles for cold design

@@ -61,6 +61,15 @@ try:
 except ImportError:
     logger.warning("Chemicals library not available. Some property methods may be missing.")
 
+# CoolProp for high-accuracy thermodynamic properties (optional)
+COOLPROP_AVAILABLE = False
+try:
+    import CoolProp  # noqa: F401
+    COOLPROP_AVAILABLE = True
+    logger.info("CoolProp library successfully imported (high-accuracy fluid properties available)")
+except ImportError:
+    logger.debug("CoolProp not available. Using thermo for fluid properties.")
+
 # Meteostat availability check
 METEOSTAT_AVAILABLE = False
 try:
@@ -211,3 +220,350 @@ def get_material_thermal_conductivity_fallback(material_name: str) -> Optional[f
     
     logger.warning(f"Material '{material_name}' not recognized in fallback properties.")
     return None
+
+
+# ============== Tank Geometry Helpers (using fluids.geometry.TANK) ============== #
+
+def get_tank_geometry(
+    geometry: str,
+    dimensions: Dict[str, float],
+    head_type: str = "ellipsoidal"
+) -> Optional[Dict[str, Any]]:
+    """
+    Get tank geometry calculations using fluids.geometry.TANK when available.
+
+    Args:
+        geometry: Tank geometry type ('vertical_cylinder_tank', 'horizontal_cylinder_tank', 'sphere')
+        dimensions: Dict with 'diameter' and 'height' (vertical) or 'length' (horizontal)
+        head_type: Head type for cylinder tanks ('ellipsoidal', 'torispherical', 'flat', 'conical', 'spherical')
+
+    Returns:
+        Dict with V_total, SA_tank, SA_lateral, SA_ends, or None if calculation fails
+    """
+    if not FLUIDS_AVAILABLE:
+        logger.debug("fluids library not available, using fallback geometry calculations")
+        return None
+
+    try:
+        from fluids.geometry import TANK
+
+        geometry_lower = geometry.lower()
+        diameter = dimensions.get('diameter', 0)
+
+        if diameter <= 0:
+            return None
+
+        # Determine orientation and length
+        if 'horizontal' in geometry_lower:
+            horizontal = True
+            length = dimensions.get('length', dimensions.get('height', 0))
+        else:
+            horizontal = False
+            length = dimensions.get('height', dimensions.get('length', 0))
+
+        if length <= 0:
+            return None
+
+        # Map head types
+        head_map = {
+            'ellipsoidal': 'ellipsoidal',
+            'torispherical': 'torispherical',
+            'flat': None,  # None means flat end
+            'conical': 'conical',
+            'spherical': 'spherical',
+            'hemispherical': 'spherical',
+        }
+        side_head = head_map.get(head_type.lower(), 'ellipsoidal')
+
+        # Create TANK instance
+        if 'sphere' in geometry_lower:
+            # For sphere, use equal D and L with spherical heads
+            tank = TANK(D=diameter, L=0, horizontal=False, sideA='spherical', sideB='spherical')
+        else:
+            tank = TANK(
+                D=diameter,
+                L=length,
+                horizontal=horizontal,
+                sideA=side_head,
+                sideB=side_head
+            )
+
+        return {
+            'V_total_m3': tank.V_total,
+            'SA_tank_m2': tank.SA_tank if hasattr(tank, 'SA_tank') else tank.A,
+            'SA_lateral_m2': tank.A_lateral if hasattr(tank, 'A_lateral') else None,
+            'SA_sideA_m2': tank.A_sideA if hasattr(tank, 'A_sideA') else None,
+            'SA_sideB_m2': tank.A_sideB if hasattr(tank, 'A_sideB') else None,
+            'h_max_m': tank.h_max if hasattr(tank, 'h_max') else (diameter if 'sphere' in geometry_lower else (diameter if horizontal else length)),
+            'source': 'fluids.geometry.TANK',
+        }
+    except Exception as e:
+        logger.warning(f"fluids.geometry.TANK calculation failed: {e}")
+        return None
+
+
+def get_tank_partial_fill(
+    geometry: str,
+    dimensions: Dict[str, float],
+    fill_height: float,
+    head_type: str = "ellipsoidal"
+) -> Optional[Dict[str, Any]]:
+    """
+    Get partial fill volume and wetted area using fluids.geometry.TANK.
+
+    Args:
+        geometry: Tank geometry type
+        dimensions: Tank dimensions
+        fill_height: Height of liquid from bottom (m)
+        head_type: Type of tank heads
+
+    Returns:
+        Dict with V_liquid, SA_wetted, or None if calculation fails
+    """
+    if not FLUIDS_AVAILABLE:
+        return None
+
+    try:
+        from fluids.geometry import TANK
+
+        geometry_lower = geometry.lower()
+        diameter = dimensions.get('diameter', 0)
+
+        if 'horizontal' in geometry_lower:
+            horizontal = True
+            length = dimensions.get('length', dimensions.get('height', 0))
+        else:
+            horizontal = False
+            length = dimensions.get('height', dimensions.get('length', 0))
+
+        head_map = {
+            'ellipsoidal': 'ellipsoidal',
+            'torispherical': 'torispherical',
+            'flat': None,
+            'conical': 'conical',
+            'spherical': 'spherical',
+        }
+        side_head = head_map.get(head_type.lower(), 'ellipsoidal')
+
+        tank = TANK(D=diameter, L=length, horizontal=horizontal, sideA=side_head, sideB=side_head)
+
+        # Clamp fill height to valid range
+        h_clamped = max(0, min(fill_height, tank.h_max))
+
+        return {
+            'V_liquid_m3': tank.V_from_h(h_clamped),
+            'SA_wetted_m2': tank.SA_from_h(h_clamped) if hasattr(tank, 'SA_from_h') else None,
+            'fill_fraction': h_clamped / tank.h_max if tank.h_max > 0 else 0,
+            'source': 'fluids.geometry.TANK',
+        }
+    except Exception as e:
+        logger.warning(f"fluids.geometry.TANK partial fill calculation failed: {e}")
+        return None
+
+
+# ============== Material Properties (using ht.insulation) ============== #
+
+def get_material_k_from_ht(
+    material_name: str,
+    temperature_k: Optional[float] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Get material thermal conductivity using ht.insulation database (390+ materials).
+
+    Args:
+        material_name: Material name (fuzzy matching supported)
+        temperature_k: Temperature in Kelvin (for temperature-dependent refractories)
+
+    Returns:
+        Dict with k, material_id, source, or None if not found
+    """
+    if not HT_AVAILABLE:
+        return None
+
+    try:
+        from ht.insulation import k_material, nearest_material, materials_dict
+
+        # Try direct lookup first
+        try:
+            if temperature_k and temperature_k > 673.15:  # > 400°C, refractory range
+                k = k_material(material_name, T=temperature_k)
+            else:
+                k = k_material(material_name)
+
+            return {
+                'thermal_conductivity_w_mk': k,
+                'material_id': material_name,
+                'temperature_k': temperature_k,
+                'source': 'ht.insulation.k_material',
+            }
+        except (KeyError, ValueError):
+            pass
+
+        # Try fuzzy matching
+        try:
+            matched_name = nearest_material(material_name)
+            if matched_name:
+                if temperature_k and temperature_k > 673.15:
+                    k = k_material(matched_name, T=temperature_k)
+                else:
+                    k = k_material(matched_name)
+
+                return {
+                    'thermal_conductivity_w_mk': k,
+                    'material_id': matched_name,
+                    'material_requested': material_name,
+                    'temperature_k': temperature_k,
+                    'fuzzy_match': True,
+                    'source': 'ht.insulation.k_material',
+                }
+        except Exception:
+            pass
+
+        return None
+    except Exception as e:
+        logger.warning(f"ht.insulation.k_material lookup failed: {e}")
+        return None
+
+
+def get_material_properties_from_ht(
+    material_name: str,
+    temperature_k: Optional[float] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Get full material properties (k, rho, Cp) using ht.insulation when available.
+
+    Args:
+        material_name: Material name
+        temperature_k: Temperature in Kelvin
+
+    Returns:
+        Dict with thermal_conductivity, density, specific_heat, or None
+    """
+    if not HT_AVAILABLE:
+        return None
+
+    try:
+        from ht.insulation import k_material, rho_material, Cp_material, nearest_material
+
+        # Try fuzzy match for material name
+        try:
+            matched_name = nearest_material(material_name)
+        except Exception:
+            matched_name = material_name
+
+        result = {
+            'material_id': matched_name or material_name,
+            'material_requested': material_name,
+            'source': 'ht.insulation',
+        }
+
+        # Get thermal conductivity
+        try:
+            if temperature_k and temperature_k > 673.15:
+                result['thermal_conductivity_w_mk'] = k_material(matched_name, T=temperature_k)
+            else:
+                result['thermal_conductivity_w_mk'] = k_material(matched_name)
+        except Exception:
+            pass
+
+        # Get density
+        try:
+            result['density_kg_m3'] = rho_material(matched_name)
+        except Exception:
+            pass
+
+        # Get specific heat
+        try:
+            result['specific_heat_j_kgk'] = Cp_material(matched_name)
+        except Exception:
+            pass
+
+        if 'thermal_conductivity_w_mk' in result or 'density_kg_m3' in result:
+            return result
+        return None
+
+    except Exception as e:
+        logger.warning(f"ht.insulation material lookup failed: {e}")
+        return None
+
+
+# ============== CoolProp Integration ============== #
+
+def get_fluid_properties_coolprop(
+    fluid_name: str,
+    temperature_k: float,
+    pressure_pa: float = 101325.0
+) -> Optional[Dict[str, Any]]:
+    """
+    Get fluid properties using CoolProp for high-accuracy calculations.
+
+    Args:
+        fluid_name: CoolProp fluid name (e.g., 'Water', 'Air', 'Nitrogen')
+        temperature_k: Temperature in Kelvin
+        pressure_pa: Pressure in Pascals
+
+    Returns:
+        Dict with fluid properties or None if CoolProp unavailable/fails
+    """
+    if not COOLPROP_AVAILABLE:
+        return None
+
+    try:
+        from CoolProp.CoolProp import PropsSI
+
+        # Map common names to CoolProp names
+        coolprop_name_map = {
+            'water': 'Water',
+            'air': 'Air',
+            'nitrogen': 'Nitrogen',
+            'oxygen': 'Oxygen',
+            'carbon dioxide': 'CarbonDioxide',
+            'co2': 'CarbonDioxide',
+            'methane': 'Methane',
+            'ethanol': 'Ethanol',
+            'ammonia': 'Ammonia',
+            'hydrogen': 'Hydrogen',
+            'helium': 'Helium',
+            'argon': 'Argon',
+            'propane': 'Propane',
+            'butane': 'Butane',
+            'r134a': 'R134a',
+            'r410a': 'R410A',
+        }
+
+        cp_name = coolprop_name_map.get(fluid_name.lower(), fluid_name)
+
+        try:
+            density = PropsSI('D', 'T', temperature_k, 'P', pressure_pa, cp_name)
+            cp = PropsSI('C', 'T', temperature_k, 'P', pressure_pa, cp_name)
+            k = PropsSI('L', 'T', temperature_k, 'P', pressure_pa, cp_name)
+            mu = PropsSI('V', 'T', temperature_k, 'P', pressure_pa, cp_name)
+            phase = PropsSI('Phase', 'T', temperature_k, 'P', pressure_pa, cp_name)
+
+            # Map phase number to string
+            phase_map = {0: 'liquid', 1: 'supercritical', 2: 'supercritical_gas',
+                        3: 'supercritical_liquid', 5: 'gas', 6: 'two_phase'}
+            phase_str = phase_map.get(int(phase), 'unknown')
+
+            return {
+                'fluid_name': fluid_name,
+                'coolprop_name': cp_name,
+                'temperature_k': temperature_k,
+                'pressure_pa': pressure_pa,
+                'density': density,
+                'specific_heat_cp': cp,
+                'thermal_conductivity': k,
+                'dynamic_viscosity': mu,
+                'kinematic_viscosity': mu / density if density > 0 else None,
+                'prandtl_number': (mu * cp) / k if k > 0 else None,
+                'phase': phase_str,
+                'source': 'CoolProp',
+                'accuracy': 'high (reference EOS)',
+            }
+        except Exception as prop_error:
+            logger.debug(f"CoolProp property calculation failed for {cp_name}: {prop_error}")
+            return None
+
+    except Exception as e:
+        logger.warning(f"CoolProp lookup failed: {e}")
+        return None

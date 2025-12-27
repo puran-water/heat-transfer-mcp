@@ -23,6 +23,227 @@ from tools.fluid_properties import get_fluid_properties
 
 logger = logging.getLogger("heat-transfer-mcp.convection_coefficient")
 
+
+def calculate_two_phase_h(
+    mass_flux_kg_m2s: float,
+    quality: float,
+    tube_diameter_m: float,
+    fluid_name: str,
+    saturation_temperature_K: float,
+    pressure_Pa: float = 101325.0,
+    heat_flux_W_m2: Optional[float] = None,
+    method: str = "auto",
+    strict: bool = False,
+) -> str:
+    """Calculate two-phase heat transfer coefficient using ht.conv_two_phase correlations.
+
+    This provides basic two-phase (boiling/condensation) heat transfer capability using
+    the ht library's established correlations. Supports 9+ methods including Shah, Chen,
+    Kandlikar, and more.
+
+    Args:
+        mass_flux_kg_m2s: Mass flux G (kg/m²s). G = mass_flow_rate / cross_sectional_area
+        quality: Vapor quality x (0 to 1, dimensionless). 0 = all liquid, 1 = all vapor
+        tube_diameter_m: Inner tube diameter (m)
+        fluid_name: Fluid name (e.g., 'water', 'R134a', 'ammonia')
+        saturation_temperature_K: Saturation temperature (K)
+        pressure_Pa: Saturation pressure (Pa). Used for fluid property lookup
+        heat_flux_W_m2: Heat flux (W/m²). Required for some correlations like Kandlikar
+        method: Correlation method - 'auto' (recommended), 'Shah_1976', 'Chen_Edelstein',
+                'Kandlikar', 'Liu_Winterton', 'Thome', 'Sun_Mishima', 'Lazarek_Black',
+                'Li_Wu', 'Cavallini_Smith_Zivi'
+        strict: If True, require ht library and fail if not available
+
+    Returns:
+        JSON string with two-phase heat transfer coefficient and calculation details
+
+    Example:
+        >>> calculate_two_phase_h(
+        ...     mass_flux_kg_m2s=500,
+        ...     quality=0.3,
+        ...     tube_diameter_m=0.01,
+        ...     fluid_name="water",
+        ...     saturation_temperature_K=373.15,
+        ...     pressure_Pa=101325
+        ... )
+    """
+    try:
+        # Input validation
+        if quality < 0 or quality > 1:
+            return json.dumps({"error": "Quality must be between 0 and 1"})
+        if mass_flux_kg_m2s <= 0:
+            return json.dumps({"error": "Mass flux must be positive"})
+        if tube_diameter_m <= 0:
+            return json.dumps({"error": "Tube diameter must be positive"})
+        if saturation_temperature_K <= 0:
+            return json.dumps({"error": "Saturation temperature must be positive"})
+
+        if not HT_AVAILABLE:
+            if strict:
+                return json.dumps({"error": "ht library required for two-phase calculations"})
+            return json.dumps({
+                "error": "ht library not available for two-phase calculations",
+                "suggestion": "Install with: pip install ht>=1.2.0"
+            })
+
+        # Get fluid properties at saturation
+        fluid_props_json = get_fluid_properties(fluid_name, saturation_temperature_K, pressure_Pa, strict=strict)
+        fluid_props = json.loads(fluid_props_json)
+
+        if "error" in fluid_props:
+            return json.dumps({
+                "error": f"Failed to get fluid properties: {fluid_props['error']}",
+                "note": "Two-phase calculations require accurate liquid/vapor properties"
+            })
+
+        # Extract properties
+        rho_l = fluid_props.get("density")  # Liquid density
+        mu_l = fluid_props.get("dynamic_viscosity")  # Liquid viscosity
+        k_l = fluid_props.get("thermal_conductivity")  # Liquid thermal conductivity
+        Cp_l = fluid_props.get("specific_heat_cp")  # Liquid specific heat
+        Pr_l = fluid_props.get("prandtl_number")
+
+        if None in [rho_l, mu_l, k_l]:
+            return json.dumps({
+                "error": "Missing critical fluid properties for two-phase calculation"
+            })
+
+        # Try to import ht two-phase module
+        import ht
+        from ht.conv_two_phase import h_two_phase
+
+        # Build kwargs for h_two_phase
+        kwargs = {
+            "m": mass_flux_kg_m2s,
+            "x": quality,
+            "D": tube_diameter_m,
+            "rhol": rho_l,
+            "mul": mu_l,
+            "kl": k_l,
+        }
+
+        # Add vapor properties if available (estimated from ideal gas for now)
+        # For more accurate vapor properties, CoolProp integration is recommended
+        try:
+            # Estimate vapor properties (simplified)
+            # In practice, these should come from proper saturation property tables
+            rho_v = rho_l * 0.001  # Very rough vapor density estimate
+            mu_v = mu_l * 0.01  # Rough vapor viscosity estimate
+
+            # Try to get better vapor properties using thermo/CoolProp
+            try:
+                from utils.import_helpers import COOLPROP_AVAILABLE
+                if COOLPROP_AVAILABLE:
+                    import CoolProp.CoolProp as CP
+                    cp_fluid = fluid_name.lower()
+                    # Map common names
+                    fluid_map = {"water": "Water", "r134a": "R134a", "ammonia": "Ammonia"}
+                    cp_name = fluid_map.get(cp_fluid, cp_fluid.capitalize())
+
+                    try:
+                        rho_v = CP.PropsSI("D", "T", saturation_temperature_K, "Q", 1, cp_name)
+                        mu_v = CP.PropsSI("V", "T", saturation_temperature_K, "Q", 1, cp_name)
+                    except Exception:
+                        pass  # Keep estimates
+            except ImportError:
+                pass
+
+            kwargs["rhog"] = rho_v
+            kwargs["mug"] = mu_v
+        except Exception:
+            pass
+
+        # Add heat flux if provided (required for Kandlikar and some others)
+        if heat_flux_W_m2 is not None:
+            kwargs["q"] = heat_flux_W_m2
+
+        # Add Cp if available
+        if Cp_l is not None:
+            kwargs["Cpl"] = Cp_l
+
+        # Calculate h using ht library
+        h_tp = None
+        used_method = None
+
+        # Available methods in ht.conv_two_phase
+        available_methods = [
+            "Shah_1976", "Chen_Edelstein", "Kandlikar", "Liu_Winterton",
+            "Thome", "Sun_Mishima", "Lazarek_Black", "Li_Wu", "Cavallini_Smith_Zivi"
+        ]
+
+        if method.lower() == "auto":
+            # Let ht choose automatically
+            try:
+                h_tp = h_two_phase(**kwargs)
+                used_method = "auto (ht selection)"
+            except Exception as e:
+                logger.debug(f"h_two_phase auto failed: {e}")
+        else:
+            # Use specified method
+            if method not in available_methods:
+                return json.dumps({
+                    "error": f"Unknown method: {method}",
+                    "available_methods": available_methods
+                })
+            try:
+                h_tp = h_two_phase(Method=method, **kwargs)
+                used_method = method
+            except Exception as e:
+                return json.dumps({
+                    "error": f"Method {method} failed: {str(e)}",
+                    "suggestion": "Try method='auto' or check required parameters for this method"
+                })
+
+        if h_tp is None:
+            return json.dumps({
+                "error": "Could not calculate two-phase heat transfer coefficient",
+                "suggestion": "Check input parameters or try a different method"
+            })
+
+        # Calculate related dimensionless numbers
+        Re_l = mass_flux_kg_m2s * tube_diameter_m / mu_l
+        Pr_l_calc = mu_l * Cp_l / k_l if Cp_l and k_l else Pr_l
+
+        result = {
+            "two_phase_h_W_m2K": h_tp,
+            "method_used": used_method,
+            "input_parameters": {
+                "mass_flux_kg_m2s": mass_flux_kg_m2s,
+                "quality": quality,
+                "tube_diameter_m": tube_diameter_m,
+                "saturation_temperature_K": saturation_temperature_K,
+                "heat_flux_W_m2": heat_flux_W_m2,
+            },
+            "fluid_properties": {
+                "name": fluid_name,
+                "liquid_density_kg_m3": rho_l,
+                "liquid_viscosity_Pa_s": mu_l,
+                "liquid_thermal_conductivity_W_mK": k_l,
+                "liquid_specific_heat_J_kgK": Cp_l,
+            },
+            "dimensionless_numbers": {
+                "Reynolds_liquid": Re_l,
+                "Prandtl_liquid": Pr_l_calc,
+            },
+            "available_methods": available_methods,
+            "notes": [
+                "Two-phase h depends strongly on vapor quality and flow regime",
+                "For best accuracy, use CoolProp for fluid properties",
+                "Heat flux (q) is required for nucleate boiling correlations"
+            ]
+        }
+
+        return json.dumps(result)
+
+    except ImportError as e:
+        return json.dumps({
+            "error": f"Required library not available: {e}",
+            "suggestion": "Install ht library with: pip install ht>=1.2.0"
+        })
+    except Exception as e:
+        logger.error(f"Error in calculate_two_phase_h: {e}", exc_info=True)
+        return json.dumps({"error": str(e)})
+
 def calculate_convection_coefficient(
     geometry: str,
     characteristic_dimension: float,

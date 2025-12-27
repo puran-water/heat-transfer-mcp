@@ -11,7 +11,13 @@ from functools import lru_cache
 from typing import Dict, List, Optional, Union, Any
 
 from utils.constants import DEG_C_to_K
-from utils.import_helpers import HT_AVAILABLE, THERMO_AVAILABLE, get_fluid_properties_fallback
+from utils.import_helpers import (
+    HT_AVAILABLE,
+    THERMO_AVAILABLE,
+    COOLPROP_AVAILABLE,
+    get_fluid_properties_fallback,
+    get_fluid_properties_coolprop,
+)
 
 logger = logging.getLogger("heat-transfer-mcp.fluid_properties")
 
@@ -128,8 +134,33 @@ def get_fluid_properties(
             return json.dumps({
                 "error": "Pressure must be positive."
             })
-        
-        # Prefer thermo for property calculations when available
+
+        # Try CoolProp first for high-accuracy properties (if available)
+        if COOLPROP_AVAILABLE:
+            try:
+                coolprop_props = get_fluid_properties_coolprop(fluid_name, T, P)
+                if coolprop_props is not None:
+                    result = {
+                        "fluid_name": fluid_name,
+                        "temperature_k": T,
+                        "pressure_pa": P,
+                        "density": coolprop_props.get("density"),
+                        "specific_heat_cp": coolprop_props.get("specific_heat_cp"),
+                        "thermal_conductivity": coolprop_props.get("thermal_conductivity"),
+                        "dynamic_viscosity": coolprop_props.get("dynamic_viscosity"),
+                        "kinematic_viscosity": coolprop_props.get("kinematic_viscosity"),
+                        "prandtl_number": coolprop_props.get("prandtl_number"),
+                        "phase": coolprop_props.get("phase", "unknown"),
+                        "data_source": "CoolProp",
+                        "accuracy": "high (reference EOS)",
+                    }
+                    # Add temperature in Celsius for convenience
+                    result["temperature_c"] = round(T - DEG_C_to_K, 2)
+                    return json.dumps(result)
+            except Exception as e:
+                logger.debug(f"CoolProp lookup failed for {fluid_name}, falling back to thermo: {e}")
+
+        # Fall back to thermo for property calculations
         if THERMO_AVAILABLE:
             try:
                 logger.info(f"Attempting to get properties for {fluid_name} using thermo")

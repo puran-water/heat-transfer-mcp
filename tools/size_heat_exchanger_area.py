@@ -29,6 +29,7 @@ def size_heat_exchanger_area(
     cold_fluid_inlet_temp: float = None,
     cold_fluid_outlet_temp: Optional[float] = None,
     flow_arrangement: str = None,
+    shells: int = 1,
     tube_side_h: Optional[float] = None,
     shell_side_h: Optional[float] = None,
     tube_outer_diameter: Optional[float] = None,
@@ -56,6 +57,7 @@ def size_heat_exchanger_area(
         cold_fluid_inlet_temp: Inlet temperature (K)
         cold_fluid_outlet_temp: Outlet temperature (K), calculated if not provided
         flow_arrangement: Flow arrangement ('counterflow', 'parallelflow', etc.)
+        shells: Number of shell passes for LMTD correction factor (default: 1)
         tube_side_h: Tube-side convection coefficient (hi) in W/m²K
         shell_side_h: Shell-side convection coefficient (ho) in W/m²K
         tube_outer_diameter: Tube outer diameter (m)
@@ -159,15 +161,15 @@ def size_heat_exchanger_area(
                 if HT_AVAILABLE and 'shell_tube' in flow_arrangement.lower():
                     from ht.hx import F_LMTD_Fakheri
                     
-                    # F_LMTD_Fakheri(Thi, Tho, Tci, Tco, shells=1)
+                    # F_LMTD_Fakheri(Thi, Tho, Tci, Tco, shells)
                     Ft = F_LMTD_Fakheri(
                         Thi=hot_fluid_inlet_temp,
-                        Tho=hot_fluid_outlet_temp, 
+                        Tho=hot_fluid_outlet_temp,
                         Tci=cold_fluid_inlet_temp,
                         Tco=cold_fluid_outlet_temp,
-                        shells=1  # Assume single shell pass
+                        shells=shells
                     )
-                    logger.info(f"Used ht.F_LMTD_Fakheri: Ft={Ft:.4f} for {flow_arrangement}")
+                    logger.info(f"Used ht.F_LMTD_Fakheri: Ft={Ft:.4f} for {flow_arrangement} with {shells} shell(s)")
                     
                 else:
                     # Fallback to simplified approximation if ht not available
@@ -372,6 +374,8 @@ def size_heat_exchanger_area(
             "calculated_overall_U_W_m2K": U,
             "log_mean_temp_diff_k": lmtd,
             "lmtd_correction_factor_Ft": Ft,
+            "shells": shells,
+            "flow_arrangement": flow_arrangement,
             "hot_fluid": {
                 "name": hot_fluid_name,
                 "flow_rate_kg_s": hot_fluid_flow_rate,

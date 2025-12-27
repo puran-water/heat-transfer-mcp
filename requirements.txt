@@ -7,10 +7,13 @@ numpy>=1.24.0
 scipy>=1.10.0
 
 # Heat transfer and properties libraries
-ht>=1.0.2
-chemicals>=1.1.0
-fluids>=1.0.26
-thermo>=0.3.0
+ht>=1.2.0  # Updated: Nu_plate_Martin fix, new Numba optimizations
+chemicals>=1.4.0  # Required for thermo 0.6.0+
+fluids>=1.3.0  # Updated: Latest tank geometry and HX utilities
+thermo>=0.6.0  # Fixed: Compatible with fluids 1.2.0+ (no PY37 AttributeError)
+
+# Optional high-accuracy thermodynamic properties (install with: pip install CoolProp)
+# CoolProp>=6.4.0  # Uncomment for REFPROP-quality fluid properties
 
 # Unit conversion
 pint>=0.20.0

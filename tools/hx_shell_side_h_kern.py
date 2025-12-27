@@ -1,19 +1,224 @@
 """
 Heat exchanger shell-side heat transfer coefficient calculation tool.
 
-This module provides functionality to estimate the shell-side heat transfer coefficient (ho) 
+This module provides functionality to estimate the shell-side heat transfer coefficient (ho)
 for a Segmental Baffled Shell-and-Tube Heat Exchanger using Kern's method.
+
+Also provides TEMA standard functions for tube sizing and bundle layout.
 """
 
 import json
 import logging
 import math
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Tuple
 
 from utils.import_helpers import HT_AVAILABLE
 from tools.fluid_properties import get_fluid_properties
 
 logger = logging.getLogger("heat-transfer-mcp.hx_shell_side_h_kern")
+
+
+# ========================== TEMA Helper Functions ========================== #
+
+def validate_tema_tubing(nps: float, bwg: int) -> Dict[str, Any]:
+    """
+    Validate if a tube size is TEMA-compliant using ht.hx functions.
+
+    Args:
+        nps: Nominal Pipe Size (e.g., 0.75 for 3/4")
+        bwg: Birmingham Wire Gauge (e.g., 14, 16, 18)
+
+    Returns:
+        Dict with validation result and tube dimensions if valid
+    """
+    if not HT_AVAILABLE:
+        return {
+            "error": "ht library required for TEMA validation",
+            "fallback": "Cannot validate without ht library"
+        }
+
+    try:
+        from ht.hx import check_tubing_TEMA, get_tube_TEMA
+
+        is_valid = check_tubing_TEMA(nps, bwg)
+
+        if is_valid:
+            # Get tube dimensions
+            tube_data = get_tube_TEMA(NPS=nps, BWG=bwg)
+            return {
+                "tema_compliant": True,
+                "nps": nps,
+                "bwg": bwg,
+                "outer_diameter_m": tube_data[2],  # Do
+                "inner_diameter_m": tube_data[3],  # Di
+                "wall_thickness_m": tube_data[4],  # t
+                "source": "ht.hx.get_tube_TEMA"
+            }
+        else:
+            return {
+                "tema_compliant": False,
+                "nps": nps,
+                "bwg": bwg,
+                "message": f"NPS={nps}, BWG={bwg} is not a standard TEMA tube size"
+            }
+    except Exception as e:
+        return {"error": f"TEMA validation failed: {e}"}
+
+
+def get_tema_tube_by_od(
+    target_od_m: float,
+    min_thickness_m: Optional[float] = None
+) -> Dict[str, Any]:
+    """
+    Find a TEMA-compliant tube close to a target outer diameter.
+
+    Args:
+        target_od_m: Target outer diameter in meters
+        min_thickness_m: Minimum wall thickness in meters (optional)
+
+    Returns:
+        Dict with closest matching TEMA tube specifications
+    """
+    if not HT_AVAILABLE:
+        return {"error": "ht library required for TEMA tube lookup"}
+
+    try:
+        from ht.hx import get_tube_TEMA
+
+        # get_tube_TEMA can do fuzzy matching with Do and tmin
+        if min_thickness_m:
+            tube_data = get_tube_TEMA(Do=target_od_m, tmin=min_thickness_m)
+        else:
+            tube_data = get_tube_TEMA(Do=target_od_m)
+
+        return {
+            "nps": tube_data[0],
+            "bwg": tube_data[1],
+            "outer_diameter_m": tube_data[2],
+            "inner_diameter_m": tube_data[3],
+            "wall_thickness_m": tube_data[4],
+            "source": "ht.hx.get_tube_TEMA (fuzzy match)"
+        }
+    except Exception as e:
+        return {"error": f"TEMA tube lookup failed: {e}"}
+
+
+def get_minimum_shell_diameter(tube_od_m: float) -> Dict[str, Any]:
+    """
+    Get minimum shell diameter for a given tube outer diameter.
+
+    Uses ht.hx.DBundle_min for initial sizing when only tube diameter is known.
+
+    Args:
+        tube_od_m: Tube outer diameter in meters
+
+    Returns:
+        Dict with minimum shell/bundle diameter
+    """
+    if not HT_AVAILABLE:
+        # Fallback: Rule of thumb - minimum 4 tubes across
+        return {
+            "min_shell_diameter_m": tube_od_m * 6,
+            "source": "fallback (6x tube OD)",
+            "note": "Install ht library for accurate TEMA sizing"
+        }
+
+    try:
+        from ht.hx import DBundle_min
+
+        d_min = DBundle_min(tube_od_m)
+        return {
+            "min_shell_diameter_m": d_min,
+            "tube_od_m": tube_od_m,
+            "source": "ht.hx.DBundle_min"
+        }
+    except Exception as e:
+        return {"error": f"Minimum shell diameter calculation failed: {e}"}
+
+
+def get_shell_bundle_clearance(bundle_diameter_m: float, shell_diameter_m: float) -> Dict[str, Any]:
+    """
+    Get shell-to-bundle clearance for different head types.
+
+    Args:
+        bundle_diameter_m: Tube bundle outer diameter in meters
+        shell_diameter_m: Shell inner diameter in meters
+
+    Returns:
+        Dict with clearance information
+    """
+    if not HT_AVAILABLE:
+        clearance = shell_diameter_m - bundle_diameter_m
+        return {
+            "clearance_m": clearance,
+            "bundle_diameter_m": bundle_diameter_m,
+            "shell_diameter_m": shell_diameter_m,
+            "source": "direct calculation",
+            "note": "Install ht library for TEMA-specific clearances"
+        }
+
+    try:
+        from ht.hx import shell_clearance
+
+        # Get clearances for different head types
+        clearance_fixed = shell_clearance(bundle_diameter_m, shell_diameter_m, fixed=True)
+        clearance_floating = shell_clearance(bundle_diameter_m, shell_diameter_m, fixed=False)
+
+        return {
+            "bundle_diameter_m": bundle_diameter_m,
+            "shell_diameter_m": shell_diameter_m,
+            "clearance_fixed_tubesheet_m": clearance_fixed,
+            "clearance_floating_head_m": clearance_floating,
+            "source": "ht.hx.shell_clearance"
+        }
+    except Exception as e:
+        return {"error": f"Shell clearance calculation failed: {e}"}
+
+
+def get_baffle_thickness(
+    shell_diameter_m: float,
+    unsupported_length_m: float,
+    service: str = "normal"
+) -> Dict[str, Any]:
+    """
+    Get recommended baffle thickness per TEMA standards.
+
+    Args:
+        shell_diameter_m: Shell inner diameter in meters
+        unsupported_length_m: Unsupported tube span in meters
+        service: Service type ('normal' or 'severe')
+
+    Returns:
+        Dict with recommended baffle thickness
+    """
+    if not HT_AVAILABLE:
+        # Fallback: Approximate based on shell diameter
+        if shell_diameter_m < 0.4:
+            thickness = 0.00318  # 1/8" for small shells
+        elif shell_diameter_m < 1.0:
+            thickness = 0.00476  # 3/16" for medium shells
+        else:
+            thickness = 0.00635  # 1/4" for large shells
+
+        return {
+            "baffle_thickness_m": thickness,
+            "source": "fallback approximation",
+            "note": "Install ht library for TEMA-specific thickness"
+        }
+
+    try:
+        from ht.hx import baffle_thickness
+
+        t = baffle_thickness(shell_diameter_m, unsupported_length_m, service=service)
+        return {
+            "baffle_thickness_m": t,
+            "shell_diameter_m": shell_diameter_m,
+            "unsupported_length_m": unsupported_length_m,
+            "service": service,
+            "source": "ht.hx.baffle_thickness"
+        }
+    except Exception as e:
+        return {"error": f"Baffle thickness calculation failed: {e}"}
 
 def calculate_hx_shell_side_h_kern(
     shell_inner_diameter: float,

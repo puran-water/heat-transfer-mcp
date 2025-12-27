@@ -2,9 +2,10 @@
 
 [![MCP](https://img.shields.io/badge/MCP-1.0-blue)](https://modelcontextprotocol.io)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org)
-[![HT](https://img.shields.io/badge/HT-1.0.2-green)](https://github.com/CalebBell/ht)
-[![Thermo](https://img.shields.io/badge/Thermo-0.3.0-green)](https://github.com/CalebBell/thermo)
-[![Fluids](https://img.shields.io/badge/Fluids-1.0.26-green)](https://github.com/CalebBell/fluids)
+[![HT](https://img.shields.io/badge/HT-1.2.0-green)](https://github.com/CalebBell/ht)
+[![Thermo](https://img.shields.io/badge/Thermo-0.6.0-green)](https://github.com/CalebBell/thermo)
+[![Fluids](https://img.shields.io/badge/Fluids-1.3.0-green)](https://github.com/CalebBell/fluids)
+[![CoolProp](https://img.shields.io/badge/CoolProp-Optional-lightgrey)](http://www.coolprop.org/)
 [![Meteostat](https://img.shields.io/badge/Meteostat-1.6.8-orange)](https://meteostat.net)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Production-success)](https://github.com/puran-water/heat-transfer-mcp)
@@ -97,6 +98,38 @@ This MCP server provides 5 consolidated omnitools that encapsulate thermal engin
 - Implemented zone-specific convection coefficients for improved accuracy
 - Added configurable internal heat transfer coefficient for gas spaces (default 5 W/m²K)
 - Validated headspace convection coefficient application through parameter override system
+
+### TEMA Heat Exchanger Standards
+- Integrated `ht.hx` TEMA functions for professional-grade shell-and-tube design
+- Added tube validation with `check_tubing_TEMA` for standard NPS/BWG combinations
+- Implemented `DBundle_min` for minimum bundle diameter sizing
+- Added `shell_clearance` lookup for TEMA-compliant shell-bundle clearances
+- Baffle thickness calculation per TEMA standards for various service classes
+- Multi-shell F_LMTD correction factor using Fakheri correlation
+
+### Two-Phase Heat Transfer
+- Added `calculate_two_phase_h` tool for boiling/condensation heat transfer
+- Supports 9+ correlations: Shah, Chen, Kandlikar, Liu-Winterton, Thome, Sun-Mishima, etc.
+- Automatic method selection based on available parameters
+- CoolProp integration for accurate vapor properties when available
+
+### High-Accuracy Fluid Properties (CoolProp)
+- Optional CoolProp integration for REFPROP-quality thermodynamic properties
+- Automatic fallback to thermo library when CoolProp unavailable
+- Reference equations of state for common refrigerants and industrial fluids
+- Install with: `pip install CoolProp`
+
+### Tank Geometry Integration
+- Integrated `fluids.geometry.TANK` for accurate tank volume and surface area
+- Supports ellipsoidal, torispherical, conical, and spherical heads
+- Partial fill calculations with `V_from_h` and `SA_from_h` methods
+- ASME F&D and DIN 28011 standard head configurations
+
+### Meteostat Data Quality Assurance
+- Documented known upstream data quality issues (#202, #201, #148, #171)
+- Implemented minimum data point validation (warns if < 2 years of data)
+- Data coverage analysis with warnings for gaps > 20%
+- Automatic ERA5 fallback for missing dew point observations
 
 ## Installation
 
@@ -275,12 +308,17 @@ parameter_optimization(
 ## Dependencies
 
 Core libraries:
-- `mcp>=1.1.0`: Model Context Protocol
-- `ht>=1.0.2`: Heat transfer correlations
-- `thermo>=0.3.0`: Thermodynamic properties
-- `fluids>=1.0.26`: Fluid mechanics
+- `mcp>=0.5.0`: Model Context Protocol
+- `ht>=1.2.0`: Heat transfer correlations (TEMA, two-phase, Numba optimizations)
+- `thermo>=0.6.0`: Thermodynamic properties
+- `fluids>=1.3.0`: Fluid mechanics and tank geometry
+- `chemicals>=1.4.0`: Chemical property database
 - `meteostat>=1.6.8`: Weather data
-- `pandas>=2.2.0`: Data analysis
+- `pandas>=2.0.0`: Data analysis
+- `cachetools>=5.3.0`: Weather data caching
+
+Optional (high-accuracy properties):
+- `CoolProp>=6.4.0`: REFPROP-quality equations of state (install separately)
 
 ## Testing
 

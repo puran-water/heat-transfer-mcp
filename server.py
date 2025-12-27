@@ -32,7 +32,7 @@ except ImportError:
 from tools.ambient_conditions import get_ambient_conditions
 from tools.fluid_properties import get_fluid_properties
 from tools.material_properties import get_material_properties
-from tools.convection_coefficient import calculate_convection_coefficient
+from tools.convection_coefficient import calculate_convection_coefficient, calculate_two_phase_h
 from tools.overall_heat_transfer import calculate_overall_heat_transfer_coefficient
 from tools.surface_heat_transfer import calculate_surface_heat_transfer
 from tools.heat_exchanger import calculate_heat_exchanger_performance
@@ -65,6 +65,7 @@ TOOLS = [
     get_fluid_properties,
     get_material_properties,
     calculate_convection_coefficient,
+    calculate_two_phase_h,
     calculate_overall_heat_transfer_coefficient,
     calculate_surface_heat_transfer,
     calculate_heat_exchanger_performance,
