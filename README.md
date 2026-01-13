@@ -14,13 +14,19 @@ Model Context Protocol server providing comprehensive heat transfer and thermal 
 
 ## Overview
 
-This MCP server provides 5 consolidated omnitools that encapsulate thermal engineering calculations:
+This MCP server provides consolidated omnitools and type-specific heat exchanger sizing tools for thermal engineering calculations:
 
+### Omnibus Tools
 1. **tank_heat_loss**: Comprehensive tank/vessel heat loss with iterative surface temperature solver
-2. **heat_exchanger_design**: Integrated HX sizing with tank heat loss calculations
-3. **pipe_heat_management**: Pipe insulation, heat trace, and freeze protection analysis
-4. **parameter_optimization**: Grid-search optimization for thermal system design
-5. **extreme_conditions**: Historical weather extremes and percentile-based design conditions
+2. **pipe_heat_management**: Pipe insulation, heat trace, and freeze protection analysis
+3. **parameter_optimization**: Grid-search optimization for thermal system design
+4. **extreme_conditions**: Historical weather extremes and percentile-based design conditions
+
+### Heat Exchanger Sizing Tools (Type-Specific)
+5. **size_plate_heat_exchanger**: Plate heat exchanger sizing with Martin/Kumar correlations
+6. **size_shell_tube_heat_exchanger**: Shell-tube HX sizing with TEMA standards and Kern/Zukauskas methods
+7. **size_double_pipe_heat_exchanger**: Double-pipe (concentric tube) HX sizing with annulus geometry
+8. **calculate_heat_exchanger_performance**: HX rating using effectiveness-NTU method
 
 ## Technical Capabilities
 
@@ -189,16 +195,66 @@ Comprehensive tank heat loss analysis with iterative surface temperature solver.
 - `design_percentile`: Weather percentile (0.90, 0.95, 0.99)
 - `solve_for`: Optional ("R_value" to find required insulation)
 
-#### heat_exchanger_design
-Size heat exchangers integrated with tank heat loss calculations.
+#### size_shell_tube_heat_exchanger
+Size shell-tube heat exchangers with coupled thermal-hydraulic design using TEMA standards.
 
 **Parameters:**
-- `include_tank_loss`: Calculate tank losses and add to duty
-- `tank_params`: Parameters for tank_heat_loss tool
-- `process_fluid`: Fluid being heated/cooled
-- `process_mass_flow_kg_s`: Flow rate (kg/s)
-- `heating_inlet_temp_K`: Hot fluid inlet temperature
-- `overall_U_W_m2K`: Overall heat transfer coefficient
+- `heat_duty_W`: Target heat transfer rate (W), or provide temperatures
+- `hot_inlet_temp_K`, `hot_outlet_temp_K`: Hot fluid temperatures (K)
+- `cold_inlet_temp_K`, `cold_outlet_temp_K`: Cold fluid temperatures (K)
+- `hot_mass_flow_kg_s`, `cold_mass_flow_kg_s`: Mass flow rates (kg/s)
+- `tube_outer_diameter_m`: Tube OD (default 0.019m / 3/4")
+- `tube_pitch_m`: Tube pitch (default 0.025m)
+- `tube_layout_angle`: 30, 45, 60, or 90 degrees
+- `n_tube_passes`: Number of tube passes (default 2)
+- `shell_side_method`: "Kern" or "Zukauskas"
+- `max_pressure_drop_tube_kPa`, `max_pressure_drop_shell_kPa`: Constraints
+
+**Returns:** Comprehensive sizing with U-value, area, pressure drops, and heat balance verification.
+
+#### size_plate_heat_exchanger
+Size plate heat exchangers with chevron plate correlations (Martin, Kumar).
+
+**Parameters:**
+- `heat_duty_W`: Target heat transfer rate (W)
+- `hot_inlet_temp_K`, `cold_inlet_temp_K`: Inlet temperatures (K)
+- `hot_mass_flow_kg_s`, `cold_mass_flow_kg_s`: Mass flow rates (kg/s)
+- `chevron_angle_deg`: Plate chevron angle (default 45°)
+- `plate_spacing_m`: Channel spacing (default 0.003m)
+- `plate_thickness_m`: Plate thickness (default 0.0005m)
+- `correlation`: "Martin_VDI", "Kumar", or "Martin_1999"
+- `max_pressure_drop_kPa`: Maximum allowable pressure drop
+
+**Returns:** Plate count, area, U-value, pressure drops per side.
+
+#### size_double_pipe_heat_exchanger
+Size double-pipe (concentric tube) heat exchangers with annulus geometry.
+
+**Parameters:**
+- `heat_duty_W`: Target heat transfer rate (W)
+- `hot_inlet_temp_K`, `cold_inlet_temp_K`: Inlet temperatures (K)
+- `hot_mass_flow_kg_s`, `cold_mass_flow_kg_s`: Mass flow rates (kg/s)
+- `inner_pipe_outer_diameter_m`: Inner pipe OD (default 0.0254m / 1")
+- `outer_pipe_inner_diameter_m`: Outer pipe ID (default 0.0525m / 2")
+- `flow_arrangement`: "counterflow" or "parallel"
+- `n_hairpins`: Number of hairpin sections (default 1)
+- `solve_for`: "length" (sizing) or "rating" (given length, find duty)
+
+**Returns:** Pipe length, U-value, pressure drops, effectiveness, NTU.
+
+#### calculate_heat_exchanger_performance
+Rate an existing heat exchanger using effectiveness-NTU method.
+
+**Parameters:**
+- `flow_arrangement`: "counterflow", "parallel", "shell_tube", "crossflow"
+- `hot_fluid_name`, `cold_fluid_name`: Fluid names
+- `hot_fluid_flow_rate`, `cold_fluid_flow_rate`: Mass flow rates (kg/s)
+- `hot_fluid_inlet_temp`, `cold_fluid_inlet_temp`: Inlet temperatures (K)
+- `overall_heat_transfer_coefficient_U`: U-value (W/m²K)
+- `heat_transfer_area`: Heat transfer area (m²)
+- `n_shell_passes`: For shell-tube configurations
+
+**Returns:** Actual duty, outlet temperatures, effectiveness, NTU, LMTD.
 
 #### pipe_heat_management
 Pipe insulation and heat trace calculations with freeze protection sizing.

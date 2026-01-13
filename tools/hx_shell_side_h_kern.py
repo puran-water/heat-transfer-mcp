@@ -235,10 +235,12 @@ def calculate_hx_shell_side_h_kern(
     tube_rows: Optional[int] = None,
     pitch_parallel: Optional[float] = None,
     pitch_normal: Optional[float] = None,
+    n_baffles: Optional[int] = None,
+    include_pressure_drop: bool = True,
     strict: bool = False,
 ) -> str:
-    """Estimates shell-side h using Kern's method.
-    
+    """Estimates shell-side h and pressure drop using Kern's method.
+
     Args:
         shell_inner_diameter: Inner diameter of the shell (Ds) in meters
         tube_outer_diameter: Outer diameter of the tubes (do) in meters
@@ -251,9 +253,19 @@ def calculate_hx_shell_side_h_kern(
         shell_fluid_bulk_temp: Average bulk temperature of the shell-side fluid in Kelvin (K)
         shell_fluid_pressure: Pressure of shell-side fluid (Pa)
         tube_wall_temp: Estimated average temperature of the tube outer wall in Kelvin (K)
-        
+        tube_rows: Number of tube rows (for Zukauskas correlation)
+        pitch_parallel: Parallel pitch (for Zukauskas correlation)
+        pitch_normal: Normal pitch (for Zukauskas correlation)
+        n_baffles: Number of baffles (required for pressure drop calculation)
+        include_pressure_drop: If True and n_baffles provided, calculate dP using dP_Kern
+
     Returns:
-        JSON string with shell-side heat transfer coefficient results
+        JSON string with shell-side heat transfer coefficient and optional pressure drop
+
+    Note:
+        The dP_Kern pressure drop calculation represents bundle crossflow only.
+        It does NOT include window or nozzle losses, so actual shell-side
+        pressure drop may be 20-40% higher.
     """
     try:
         # Parameter validation
@@ -400,6 +412,56 @@ def calculate_hx_shell_side_h_kern(
 
         h_o_final = h_o_provisional * viscosity_correction
 
+        # Calculate pressure drop using dP_Kern if requested and n_baffles provided
+        pressure_drop_result = None
+        if include_pressure_drop and n_baffles is not None and HT_AVAILABLE:
+            try:
+                # Import dP_Kern from ht.conv_tube_bank (NOT ht.hx!)
+                from ht.conv_tube_bank import dP_Kern
+
+                # Calculate pressure drop
+                if mu_w is not None:
+                    dP = dP_Kern(
+                        m=shell_fluid_flow_rate,
+                        rho=rho_b,
+                        mu=mu_b,
+                        DShell=shell_inner_diameter,
+                        LSpacing=baffle_spacing,
+                        pitch=tube_pitch,
+                        Do=tube_outer_diameter,
+                        NBaffles=n_baffles,
+                        mu_w=mu_w
+                    )
+                else:
+                    dP = dP_Kern(
+                        m=shell_fluid_flow_rate,
+                        rho=rho_b,
+                        mu=mu_b,
+                        DShell=shell_inner_diameter,
+                        LSpacing=baffle_spacing,
+                        pitch=tube_pitch,
+                        Do=tube_outer_diameter,
+                        NBaffles=n_baffles
+                    )
+
+                pressure_drop_result = {
+                    "pressure_drop_Pa": dP,
+                    "pressure_drop_kPa": dP / 1000,
+                    "n_baffles": n_baffles,
+                    "correlation": "dP_Kern (ht.conv_tube_bank)",
+                    "note": "Bundle crossflow only; excludes window/nozzle losses. Actual dP may be 20-40% higher."
+                }
+            except ImportError as ie:
+                logger.warning(f"Could not import dP_Kern: {ie}")
+                pressure_drop_result = {"error": f"dP_Kern import failed: {ie}"}
+            except Exception as e:
+                logger.warning(f"Pressure drop calculation failed: {e}")
+                pressure_drop_result = {"error": str(e)}
+        elif include_pressure_drop and n_baffles is None:
+            pressure_drop_result = {
+                "note": "Pressure drop not calculated: n_baffles not provided"
+            }
+
         # Create result
         result = {
             "shell_side_h_W_m2K": h_o_final,
@@ -422,6 +484,10 @@ def calculate_hx_shell_side_h_kern(
                 "baffle_cut_percent": baffle_cut_percent
             }
         }
+
+        # Add pressure drop if calculated
+        if pressure_drop_result is not None:
+            result["pressure_drop"] = pressure_drop_result
 
         return json.dumps(result)
 

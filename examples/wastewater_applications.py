@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tools.surface_heat_transfer import calculate_surface_heat_transfer
 from tools.buried_object_heat_loss import calculate_buried_object_heat_loss
 from tools.heat_duty import calculate_heat_duty
-from tools.size_heat_exchanger_area import size_heat_exchanger_area
+from tools.size_shell_tube_heat_exchanger import size_shell_tube_heat_exchanger
 from tools.ground_heat_loss import calculate_ground_heat_loss
 
 
@@ -70,23 +70,35 @@ def main():
 
     # Example 4: Sludge Heat Recovery
     print("Example 4: Sludge Heat Recovery")
-    print("Sizing heat exchanger for sludge heating...")
-    heat_recovery = size_heat_exchanger_area(
-        required_heat_duty_q="300 HP",  # Available from boiler
-        hot_fluid_name="water",
-        hot_fluid_flow_rate="250 GPM",  # Hot water flow
-        hot_fluid_inlet_temp="150 degF",  # Boiler water temperature
-        cold_fluid_name="water",  # Sludge approximated as water
-        cold_fluid_flow_rate="200 GPM",  # Sludge flow rate
-        cold_fluid_inlet_temp="60 degF",  # Raw sludge temperature
-        flow_arrangement="counterflow",
-        tube_outer_diameter="0.75 in",
-        tube_inner_diameter="0.625 in",
-        fouling_factor_inner="0.001 hr*ft^2*F/BTU",  # Sludge side
-        fouling_factor_outer="0.0005 hr*ft^2*F/BTU",  # Water side
+    print("Sizing shell-tube heat exchanger for sludge heating...")
+    # Convert units: 300 HP ≈ 223,710 W, 250 GPM ≈ 15.8 kg/s, 200 GPM ≈ 12.6 kg/s
+    # 150°F ≈ 338.7 K, 60°F ≈ 288.7 K
+    import json
+    heat_recovery_json = size_shell_tube_heat_exchanger(
+        heat_duty_W=223710,  # 300 HP in W
+        hot_inlet_temp_K=338.7,  # 150°F
+        cold_inlet_temp_K=288.7,  # 60°F
+        hot_mass_flow_kg_s=15.8,  # 250 GPM water
+        cold_mass_flow_kg_s=12.6,  # 200 GPM sludge (as water)
+        hot_fluid="water",
+        cold_fluid="water",
+        tube_outer_diameter_m=0.01905,  # 3/4"
+        tube_inner_diameter_m=0.01588,  # 5/8"
+        tube_length_m=3.0,  # 10 ft tubes
+        n_tube_passes=4,  # 4-pass for turbulent flow
+        fouling_factor_tube_m2K_W=0.000176,  # Sludge side (~0.001 hr*ft²*F/BTU)
+        fouling_factor_shell_m2K_W=0.000088,  # Water side (~0.0005 hr*ft²*F/BTU)
+        auto_optimize=True,  # Auto-find optimal configuration
     )
-    print(f"Required heat exchanger area: {heat_recovery['area_m2']:.1f} m²")
-    print(f"Required heat exchanger area: {heat_recovery['area_ft2']:.1f} ft²")
+    heat_recovery = json.loads(heat_recovery_json)
+    if "error" not in heat_recovery:
+        # Extract from optimization result or direct result
+        result = heat_recovery.get("best_result", heat_recovery)
+        print(f"Required heat exchanger area: {result['geometry']['area_required_m2']:.1f} m²")
+        print(f"Number of tubes: {result['geometry']['n_tubes']}")
+        print(f"Overall U-value: {result['thermal']['U_W_m2K']:.0f} W/m²K")
+    else:
+        print(f"Heat exchanger sizing failed: {heat_recovery['error']}")
     print()
 
     # Example 5: Primary Clarifier Heat Loss

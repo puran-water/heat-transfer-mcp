@@ -41,25 +41,26 @@ from tools.solar_radiation import calculate_solar_radiation_on_surface
 from tools.ground_heat_loss import calculate_ground_heat_loss
 from tools.buried_object_heat_loss import calculate_buried_object_heat_loss
 from tools.hx_shell_side_h_kern import calculate_hx_shell_side_h_kern
-from tools.size_heat_exchanger_area import size_heat_exchanger_area
 from tools.estimate_hx_physical_dims import estimate_hx_physical_dims
 from tools.tank_heat_loss import tank_heat_loss
 from tools.extreme_conditions import extreme_conditions
-from tools.heat_exchanger_design import heat_exchanger_design
 from tools.pipe_heat_management import pipe_heat_management
 from tools.parameter_optimization import parameter_optimization
+from tools.calculate_pressure_drop import calculate_pressure_drop
+from tools.plate_heat_exchanger_sizing import size_plate_heat_exchanger
+from tools.size_shell_tube_heat_exchanger import size_shell_tube_heat_exchanger
+from tools.size_double_pipe_heat_exchanger import size_double_pipe_heat_exchanger
 
 # List of all tools
 # Consolidated omnibus tools (primary)
 OMNIBUS_TOOLS = [
     tank_heat_loss,
     extreme_conditions,
-    heat_exchanger_design,
     pipe_heat_management,
     parameter_optimization,
 ]
 
-# Legacy granular tools (kept for backward compatibility)
+# Supporting tools (helpers and type-specific sizing)
 TOOLS = [
     get_ambient_conditions,
     get_fluid_properties,
@@ -74,8 +75,12 @@ TOOLS = [
     calculate_ground_heat_loss,
     calculate_buried_object_heat_loss,
     calculate_hx_shell_side_h_kern,
-    size_heat_exchanger_area,
-    estimate_hx_physical_dims
+    estimate_hx_physical_dims,
+    calculate_pressure_drop,
+    # Type-specific HX sizing tools (thermal-hydraulic coupled)
+    size_plate_heat_exchanger,
+    size_shell_tube_heat_exchanger,
+    size_double_pipe_heat_exchanger,
 ]
 
 # Register all tools with automatic unit awareness if available

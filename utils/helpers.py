@@ -59,48 +59,60 @@ def calculate_prandtl_number(
 def calculate_nusselt_number_external_flow(
     reynolds_number: float,
     prandtl_number: float,
-    geometry: str = "flat_plate"
+    geometry: str = "flat_plate",
+    strict: bool = True
 ) -> float:
     """
     Calculate Nusselt number for external flow over various geometries.
-    
+    Uses ht library functions where available; fails loudly if unavailable.
+
     Args:
         reynolds_number: Reynolds number (dimensionless)
         prandtl_number: Prandtl number (dimensionless)
         geometry: Geometry type ("flat_plate", "cylinder", "sphere")
-        
+        strict: If True (default), require ht library for flat_plate/cylinder
+
     Returns:
         Nusselt number (dimensionless)
+
+    Raises:
+        ImportError: If ht library required but unavailable (strict mode)
+        ValueError: If geometry not recognized
     """
     geometry_lower = geometry.lower()
 
-    # Prefer correlations from ht when available
-    if HT_AVAILABLE:
-        try:
-            if geometry_lower == "flat_plate" or "flat_plate_external" in geometry_lower:
-                from ht.conv_external import Nu_external_horizontal_plate
-                return Nu_external_horizontal_plate(reynolds_number, prandtl_number)
-            if "cylinder" in geometry_lower:
-                from ht.conv_external import Nu_external_cylinder
-                return Nu_external_cylinder(reynolds_number, prandtl_number)
-        except Exception as e:
-            logger.debug(f"ht external convection call failed ({geometry}): {e}; using fallback.")
-
-    # Fallback simple correlations
+    # For flat_plate and cylinder: REQUIRE ht library functions
     if geometry_lower == "flat_plate" or "flat_plate_external" in geometry_lower:
-        if reynolds_number < 5e5:  # Laminar
-            return 0.664 * math.sqrt(reynolds_number) * prandtl_number**(1/3)
-        else:
-            return 0.037 * reynolds_number**0.8 * prandtl_number**(1/3)
+        if not HT_AVAILABLE:
+            if strict:
+                raise ImportError("ht library required for flat_plate external convection")
+            # Non-strict mode: use standard flat plate correlation
+            if reynolds_number < 5e5:  # Laminar
+                return 0.664 * math.sqrt(reynolds_number) * prandtl_number**(1/3)
+            else:
+                return 0.037 * reynolds_number**0.8 * prandtl_number**(1/3)
+        from ht.conv_external import Nu_external_horizontal_plate
+        return Nu_external_horizontal_plate(reynolds_number, prandtl_number)
+
     if "cylinder" in geometry_lower:
-        return 0.3 + ((0.62 * math.sqrt(reynolds_number) * prandtl_number**(1/3) *
-                      (1 + (reynolds_number/282000)**(5/8))**(4/5)) /
-                      (1 + (0.4/prandtl_number)**(2/3))**(1/4))
+        if not HT_AVAILABLE:
+            if strict:
+                raise ImportError("ht library required for cylinder external convection")
+            # Non-strict: Churchill-Bernstein correlation
+            return 0.3 + ((0.62 * math.sqrt(reynolds_number) * prandtl_number**(1/3) *
+                          (1 + (reynolds_number/282000)**(5/8))**(4/5)) /
+                          (1 + (0.4/prandtl_number)**(2/3))**(1/4))
+        from ht.conv_external import Nu_external_cylinder
+        return Nu_external_cylinder(reynolds_number, prandtl_number)
+
     if "sphere" in geometry_lower:
-        # Whitaker-like simple fallback
-        return 2 + 0.6 * math.sqrt(reynolds_number) * prandtl_number**(1/3)
-    logger.warning(f"Geometry '{geometry}' not recognized for Nusselt calculation")
-    return 2.0
+        # Whitaker correlation for forced convection over sphere
+        # Standard textbook correlation - no ht equivalent exists
+        # Nu = 2 + (0.4*Re^0.5 + 0.06*Re^(2/3)) * Pr^0.4 * (mu/mu_s)^0.25
+        # Simplified form without viscosity ratio correction:
+        return 2 + (0.4 * math.sqrt(reynolds_number) + 0.06 * reynolds_number**(2/3)) * prandtl_number**0.4
+
+    raise ValueError(f"Geometry '{geometry}' not recognized for external Nusselt calculation")
 
 def calculate_radiation_heat_transfer(
     emissivity: float,
@@ -169,39 +181,47 @@ def calculate_lmtd(
 ) -> float:
     """
     Calculate Log Mean Temperature Difference (LMTD) for heat exchangers.
-    
+
+    Uses ht.core.LMTD from the CalebBell/ht library for accurate calculation.
+
     Args:
         t_hot_in: Hot fluid inlet temperature in K
         t_hot_out: Hot fluid outlet temperature in K
         t_cold_in: Cold fluid inlet temperature in K
         t_cold_out: Cold fluid outlet temperature in K
         flow_arrangement: Flow arrangement ("counterflow", "parallelflow")
-        
+
     Returns:
         Log Mean Temperature Difference in K
+
+    Raises:
+        ImportError: If ht library is not available
+        ValueError: If temperature crossover occurs (invalid LMTD)
     """
+    if not HT_AVAILABLE:
+        raise ImportError("ht library required for LMTD calculation")
+
+    from ht.core import LMTD
+
     flow_lower = flow_arrangement.lower()
-    
+
+    # Map flow arrangement to ht.core.LMTD counterflow parameter
     if flow_lower == "counterflow":
-        delta_t1 = t_hot_in - t_cold_out
-        delta_t2 = t_hot_out - t_cold_in
-    elif flow_lower == "parallelflow":
-        delta_t1 = t_hot_in - t_cold_in
-        delta_t2 = t_hot_out - t_cold_out
+        counterflow = True
+    elif flow_lower in ("parallelflow", "parallel", "cocurrent"):
+        counterflow = False
     else:
         logger.warning(f"Flow arrangement '{flow_arrangement}' not recognized, using counterflow")
-        delta_t1 = t_hot_in - t_cold_out
-        delta_t2 = t_hot_out - t_cold_in
-    
-    # Check for valid temperature differences
-    if delta_t1 <= 0 or delta_t2 <= 0:
-        raise ValueError("Temperature differences must be positive for valid LMTD")
-    
-    # Handle case when delta_t1 ≈ delta_t2
-    if abs(delta_t1 - delta_t2) < 0.01:
-        return delta_t1
-    
-    return (delta_t1 - delta_t2) / math.log(delta_t1 / delta_t2)
+        counterflow = True
+
+    # ht.core.LMTD handles the calculation including edge cases
+    # It raises ValueError if temperatures are invalid
+    try:
+        return LMTD(Thi=t_hot_in, Tho=t_hot_out, Tci=t_cold_in, Tco=t_cold_out,
+                    counterflow=counterflow)
+    except Exception as e:
+        # Re-raise with more context
+        raise ValueError(f"LMTD calculation failed: {e}. Check for temperature crossover.")
 
 def calculate_ntu_effectiveness(
     ntu: float,
@@ -210,73 +230,55 @@ def calculate_ntu_effectiveness(
 ) -> float:
     """
     Calculate heat exchanger effectiveness using the NTU method.
-    Uses ht library functions when available for maximum accuracy.
-    
+
+    Uses ht.hx.effectiveness_from_NTU from the CalebBell/ht library.
+
     Args:
         ntu: Number of Transfer Units (dimensionless)
         capacity_ratio: Heat capacity ratio Cmin/Cmax (dimensionless)
-        flow_arrangement: Flow arrangement type
-        
+        flow_arrangement: Flow arrangement type - one of:
+            - 'counterflow': Pure counterflow
+            - 'parallelflow' or 'parallel': Co-current flow
+            - 'crossflow': Crossflow, both fluids unmixed
+            - 'shell_tube_1_pass' or 'shell_and_tube': TEMA E configuration
+
     Returns:
         Heat exchanger effectiveness (0-1)
+
+    Raises:
+        ImportError: If ht library is not available
     """
+    if not HT_AVAILABLE:
+        raise ImportError("ht library required for NTU-effectiveness calculation")
+
+    from ht.hx import effectiveness_from_NTU
+
     flow_lower = flow_arrangement.lower()
-    
-    # Try to use ht library effectiveness functions first
-    if HT_AVAILABLE:
-        try:
-            from ht.hx import effectiveness_from_NTU
-            
-            # Map our flow arrangement names to ht library subtypes
-            subtype_map = {
-                'counterflow': 'counterflow',
-                'parallelflow': 'parallel',
-                'crossflow_unmixed': 'crossflow',
-                'crossflow': 'crossflow',
-                'shell_tube_1_pass': 'TEMA E', # TEMA E shell-and-tube configuration
-                'shell_and_tube': 'TEMA E'
-            }
-            
-            subtype = subtype_map.get(flow_lower, 'counterflow')
-            effectiveness = effectiveness_from_NTU(ntu, capacity_ratio, subtype=subtype)
-            
-            logger.debug(f"Used ht.effectiveness_from_NTU: ε={effectiveness:.4f} for {flow_arrangement}")
-            return effectiveness
-            
-        except (ImportError, Exception) as e:
-            logger.debug(f"ht library effectiveness calculation failed: {e}. Using fallback.")
-    
-    # Fallback to manual correlations if ht not available
-    # Handle special case where Cmin/Cmax = 0 (e.g., condensing/evaporating fluid)
-    if capacity_ratio < 0.001:
-        return 1.0 - math.exp(-ntu)
-    
-    if flow_lower == "counterflow":
-        # Counter flow effectiveness
-        if abs(capacity_ratio - 1.0) < 0.001:
-            # Special case for Cr = 1
-            return ntu / (1.0 + ntu)
-        else:
-            return (1.0 - math.exp(-ntu * (1.0 - capacity_ratio))) / (1.0 - capacity_ratio * math.exp(-ntu * (1.0 - capacity_ratio)))
-    
-    elif flow_lower == "parallelflow":
-        # Parallel flow effectiveness
-        return (1.0 - math.exp(-ntu * (1.0 + capacity_ratio))) / (1.0 + capacity_ratio)
-    
-    elif flow_lower in ["crossflow", "crossflow_unmixed"]:
-        # Cross flow, both fluids unmixed
-        return 1.0 - math.exp((1.0 / capacity_ratio) * ntu**0.22 * (math.exp(-capacity_ratio * ntu**0.78) - 1.0))
-    
-    elif flow_lower == "shell_tube_1_pass":
-        # Shell and tube, 1 shell pass, 2, 4, 6... tube passes
-        term1 = 2.0 / (1.0 + capacity_ratio + math.sqrt(1.0 + capacity_ratio**2))
-        term2 = 1.0 + math.exp(-ntu * math.sqrt(1.0 + capacity_ratio**2))
-        term3 = 1.0 - math.exp(-ntu * math.sqrt(1.0 + capacity_ratio**2))
-        return term1 * (term2 / term3)
-    
-    else:
+
+    # Map flow arrangement names to ht library subtypes
+    subtype_map = {
+        'counterflow': 'counterflow',
+        'parallelflow': 'parallel',
+        'parallel': 'parallel',
+        'cocurrent': 'parallel',
+        'crossflow_unmixed': 'crossflow',
+        'crossflow': 'crossflow',
+        'shell_tube_1_pass': 'TEMA E',
+        'shell_and_tube': 'TEMA E',
+        'shell_tube': 'TEMA E',
+        'tema_e': 'TEMA E',
+        'tema_j': 'TEMA J',
+        'tema_h': 'TEMA H',
+        'tema_g': 'TEMA G',
+    }
+
+    subtype = subtype_map.get(flow_lower)
+    if subtype is None:
         logger.warning(f"Flow arrangement '{flow_arrangement}' not recognized, using counterflow")
-        if abs(capacity_ratio - 1.0) < 0.001:
-            return ntu / (1.0 + ntu)
-        else:
-            return (1.0 - math.exp(-ntu * (1.0 - capacity_ratio))) / (1.0 - capacity_ratio * math.exp(-ntu * (1.0 - capacity_ratio)))
+        subtype = 'counterflow'
+
+    effectiveness = effectiveness_from_NTU(ntu, capacity_ratio, subtype=subtype)
+
+    logger.debug(f"ht.effectiveness_from_NTU: NTU={ntu:.3f}, Cr={capacity_ratio:.3f}, "
+                 f"subtype={subtype} → ε={effectiveness:.4f}")
+    return effectiveness

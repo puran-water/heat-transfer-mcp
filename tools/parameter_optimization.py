@@ -14,8 +14,9 @@ import itertools
 from typing import Any, Dict, List, Optional, Callable
 
 from tools.tank_heat_loss import tank_heat_loss
-from tools.heat_exchanger_design import heat_exchanger_design
 from tools.pipe_heat_management import pipe_heat_management
+from tools.plate_heat_exchanger_sizing import size_plate_heat_exchanger
+from tools.size_shell_tube_heat_exchanger import size_shell_tube_heat_exchanger
 from utils.validation import (
     ValidationError,
     ensure_list_nonempty,
@@ -27,8 +28,9 @@ logger = logging.getLogger("heat-transfer-mcp.parameter_optimization")
 
 TOOL_REGISTRY: Dict[str, Callable[..., str]] = {
     "tank_heat_loss": tank_heat_loss,
-    "heat_exchanger_design": heat_exchanger_design,
     "pipe_heat_management": pipe_heat_management,
+    "size_plate_heat_exchanger": size_plate_heat_exchanger,
+    "size_shell_tube_heat_exchanger": size_shell_tube_heat_exchanger,
 }
 
 
@@ -54,7 +56,7 @@ def parameter_optimization(
     """Grid-search parameter sweep for a selected tool and objective.
 
     Args:
-        tool_name: One of {'tank_heat_loss','heat_exchanger_design','pipe_heat_management'}.
+        tool_name: One of {'tank_heat_loss','pipe_heat_management','size_plate_heat_exchanger','size_shell_tube_heat_exchanger'}.
         base_params: Baseline parameter dict for the tool.
         sweep: Dict of parameter->list of values to sweep (Cartesian product).
         objective_key: Dot-path key in the tool's JSON result used as the objective value.

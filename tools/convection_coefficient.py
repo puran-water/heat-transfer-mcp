@@ -255,13 +255,24 @@ def calculate_convection_coefficient(
     fluid_velocity: Optional[float] = None,
     roughness: Optional[float] = 0.0,
     pipe_length: Optional[float] = None,
+    # PHE-specific parameters (for geometry='plate_chevron')
+    chevron_angle: Optional[float] = None,
+    plate_enlargement_factor: Optional[float] = None,
+    phe_correlation: str = "Martin_VDI",
     strict: bool = False,
 ) -> str:
     """Calculates convective heat transfer coefficient for various geometries and flow conditions.
-    
+
     Args:
-        geometry: Geometry type (e.g., 'flat_plate_external', 'pipe_internal')
-        characteristic_dimension: Characteristic length/diameter in meters
+        geometry: Geometry type. Supported values:
+            - 'flat_plate_external': External flow over flat plate
+            - 'pipe_internal': Internal pipe flow
+            - 'pipe_external' or 'cylinder': External flow over cylinder
+            - 'sphere': Flow over sphere
+            - 'vertical_wall': Vertical surface (natural convection)
+            - 'plate_chevron': Chevron-style plate heat exchanger channel
+        characteristic_dimension: Characteristic length/diameter in meters.
+            For plate_chevron: hydraulic diameter D_h (m)
         fluid_name: Name of the fluid
         bulk_fluid_temperature: Bulk temperature of the fluid in Kelvin
         surface_temperature: Temperature of the surface in Kelvin
@@ -269,10 +280,21 @@ def calculate_convection_coefficient(
         flow_type: Flow regime ('natural' or 'forced')
         fluid_velocity: Fluid velocity in m/s (required for 'forced' flow)
         roughness: Surface roughness in meters (relevant for internal pipe flow)
+        pipe_length: Flow length in meters (for entry effects in pipe flow)
+        chevron_angle: Chevron angle in degrees (required for plate_chevron, typically 30-65)
+        plate_enlargement_factor: Area enhancement factor from corrugations (1.1-1.5 typical).
+            Required for Muley_Manglik correlation. If not provided, geometry class can compute it.
+        phe_correlation: PHE Nusselt correlation to use. Options:
+            - 'Kumar': APV data-based, supports viscosity correction (Re 0.1-10000, chevron 30-65°)
+            - 'Martin_1999': Martin 1999 theoretical (Re 200-10000, chevron 0-80°)
+            - 'Martin_VDI': Martin VDI revision (default, Re 200-10000, chevron 0-80°)
+            - 'Muley_Manglik': Includes enlargement factor (Re > 1000, chevron 30-60°)
+            - 'Khan_Khan': For low-Re liquids
         strict: If True, require ht library and fail if correlations are not available
-        
+
     Returns:
-        JSON string with the calculated convection coefficient and related parameters
+        JSON string with the calculated convection coefficient and related parameters.
+        For plate_chevron, also includes the paired friction correlation name.
     """
     # Validate inputs to avoid misleading errors and non-physical results
     try:
@@ -281,11 +303,31 @@ def calculate_convection_coefficient(
                 "error": "Geometry must be a non-empty string."
             })
         geometry_lower = geometry.lower()
-        recognized_keywords = ['flat_plate', 'plate', 'pipe', 'cylinder', 'sphere', 'vertical', 'horizontal', 'wall']
+        recognized_keywords = ['flat_plate', 'plate', 'pipe', 'cylinder', 'sphere', 'vertical', 'horizontal', 'wall', 'plate_chevron', 'chevron']
         if not any(k in geometry_lower for k in recognized_keywords):
             return json.dumps({
                 "error": f"Unsupported geometry: {geometry}."
             })
+
+        # Validate PHE-specific parameters for plate_chevron geometry
+        if 'plate_chevron' in geometry_lower or 'chevron' in geometry_lower:
+            if chevron_angle is None:
+                return json.dumps({
+                    "error": "chevron_angle is required for plate_chevron geometry."
+                })
+            if chevron_angle < 0 or chevron_angle > 90:
+                return json.dumps({
+                    "error": "chevron_angle must be between 0 and 90 degrees."
+                })
+            valid_phe_correlations = ['Kumar', 'Martin_1999', 'Martin_VDI', 'Muley_Manglik', 'Khan_Khan']
+            if phe_correlation not in valid_phe_correlations:
+                return json.dumps({
+                    "error": f"Invalid phe_correlation: {phe_correlation}. Valid options: {valid_phe_correlations}"
+                })
+            if phe_correlation == 'Muley_Manglik' and plate_enlargement_factor is None:
+                return json.dumps({
+                    "error": "plate_enlargement_factor is required for Muley_Manglik correlation."
+                })
         if flow_type is None or flow_type.lower() not in {"forced", "natural"}:
             return json.dumps({
                 "error": "flow_type must be 'forced' or 'natural'."
@@ -404,10 +446,149 @@ def calculate_convection_coefficient(
             
         if HT_AVAILABLE:
             import ht
-            
+
             try:
+                # Handle plate_chevron geometry first (PHE convection coefficient)
+                if 'plate_chevron' in geometry_lower or ('chevron' in geometry_lower and 'plate' not in geometry_lower):
+                    # Import PHE-specific correlations from ht.conv_plate
+                    from ht.conv_plate import (
+                        Nu_plate_Kumar,
+                        Nu_plate_Martin,
+                        Nu_plate_Muley_Manglik,
+                        Nu_plate_Khan_Khan
+                    )
+
+                    # PHE is always forced convection
+                    if reynolds_number is None or reynolds_number <= 0:
+                        return json.dumps({
+                            "error": "Reynolds number must be positive for plate_chevron geometry. Ensure fluid_velocity is provided."
+                        })
+
+                    # Get wall viscosity for Kumar correlation (viscosity correction)
+                    mu_wall = None
+                    if phe_correlation == 'Kumar':
+                        try:
+                            wall_props = json.loads(get_fluid_properties(fluid_name, surface_temperature, pressure, strict=strict))
+                            if "error" not in wall_props:
+                                mu_wall = wall_props.get("dynamic_viscosity")
+                        except Exception:
+                            pass
+
+                    # Calculate Nusselt number using appropriate correlation
+                    # Note: chevron_angle for ht functions is in degrees
+                    paired_friction_correlation = None
+                    correlation_notes = []
+
+                    if phe_correlation == 'Kumar':
+                        # Kumar correlation (APV data-based)
+                        # Valid range: Re 0.1-10000, chevron 30-65°
+                        if chevron_angle < 30 or chevron_angle > 65:
+                            correlation_notes.append(f"Warning: Kumar correlation valid for chevron 30-65°, got {chevron_angle}°")
+                        if reynolds_number < 0.1 or reynolds_number > 10000:
+                            correlation_notes.append(f"Warning: Kumar correlation valid for Re 0.1-10000, got Re={reynolds_number:.1f}")
+
+                        if mu_wall is not None and dynamic_viscosity is not None:
+                            nusselt_number = Nu_plate_Kumar(
+                                Re=reynolds_number,
+                                Pr=prandtl_number,
+                                chevron_angle=chevron_angle,
+                                mu=dynamic_viscosity,
+                                mu_wall=mu_wall
+                            )
+                        else:
+                            nusselt_number = Nu_plate_Kumar(
+                                Re=reynolds_number,
+                                Pr=prandtl_number,
+                                chevron_angle=chevron_angle
+                            )
+                        paired_friction_correlation = "friction_plate_Kumar"
+
+                    elif phe_correlation in ['Martin_1999', 'Martin_VDI']:
+                        # Martin correlation (theoretical)
+                        # Valid range: Re 200-10000, chevron 0-80°
+                        if chevron_angle < 0 or chevron_angle > 80:
+                            correlation_notes.append(f"Warning: Martin correlation valid for chevron 0-80°, got {chevron_angle}°")
+                        if reynolds_number < 200 or reynolds_number > 10000:
+                            correlation_notes.append(f"Warning: Martin correlation valid for Re 200-10000, got Re={reynolds_number:.1f}")
+
+                        variant = '1999' if phe_correlation == 'Martin_1999' else 'VDI'
+                        nusselt_number = Nu_plate_Martin(
+                            Re=reynolds_number,
+                            Pr=prandtl_number,
+                            chevron_angle=chevron_angle,
+                            variant=variant
+                        )
+                        paired_friction_correlation = f"friction_plate_Martin_{variant}"
+
+                    elif phe_correlation == 'Muley_Manglik':
+                        # Muley-Manglik correlation (includes enlargement factor)
+                        # Valid range: Re > 1000, chevron 30-60°
+                        if chevron_angle < 30 or chevron_angle > 60:
+                            correlation_notes.append(f"Warning: Muley_Manglik valid for chevron 30-60°, got {chevron_angle}°")
+                        if reynolds_number < 1000:
+                            correlation_notes.append(f"Warning: Muley_Manglik valid for Re > 1000, got Re={reynolds_number:.1f}")
+
+                        nusselt_number = Nu_plate_Muley_Manglik(
+                            Re=reynolds_number,
+                            Pr=prandtl_number,
+                            chevron_angle=chevron_angle,
+                            plate_enlargement_factor=plate_enlargement_factor
+                        )
+                        paired_friction_correlation = "friction_plate_Muley_Manglik"
+
+                    elif phe_correlation == 'Khan_Khan':
+                        # Khan & Khan correlation (low-Re liquids)
+                        nusselt_number = Nu_plate_Khan_Khan(
+                            Re=reynolds_number,
+                            Pr=prandtl_number,
+                            chevron_angle=chevron_angle
+                        )
+                        paired_friction_correlation = "friction_plate_Kumar"  # Commonly paired with Kumar friction
+                        correlation_notes.append("Khan_Khan correlation specific to low-Re liquids")
+
+                    if nusselt_number is not None:
+                        convection_coefficient = nusselt_number * thermal_conductivity / characteristic_dimension
+
+                        # Build PHE-specific result
+                        result = {
+                            "convection_coefficient_h": convection_coefficient,
+                            "convection_coefficient_h_W_m2K": convection_coefficient,
+                            "nusselt_number": nusselt_number,
+                            "geometry": geometry,
+                            "flow_type": "forced",
+                            "fluid_properties": {
+                                "name": fluid_name,
+                                "density": density,
+                                "dynamic_viscosity": dynamic_viscosity,
+                                "thermal_conductivity": thermal_conductivity,
+                                "prandtl_number": prandtl_number,
+                                "film_temperature": film_temperature
+                            },
+                            "calculation_details": {
+                                "reynolds_number": reynolds_number,
+                                "fluid_velocity": fluid_velocity,
+                                "hydraulic_diameter_m": characteristic_dimension,
+                                "chevron_angle_deg": chevron_angle,
+                                "phe_correlation": phe_correlation,
+                                "paired_friction_correlation": paired_friction_correlation
+                            },
+                            "unit": "W/(m²·K)"
+                        }
+
+                        if plate_enlargement_factor is not None:
+                            result["calculation_details"]["plate_enlargement_factor"] = plate_enlargement_factor
+
+                        if mu_wall is not None:
+                            result["calculation_details"]["viscosity_correction_applied"] = True
+                            result["calculation_details"]["mu_wall_Pa_s"] = mu_wall
+
+                        if correlation_notes:
+                            result["warnings"] = correlation_notes
+
+                        return json.dumps(result)
+
                 # Use HT library correlations directly instead of manual implementations
-                if 'flat_plate_external' in geometry_lower and flow_type.lower() == 'forced':
+                elif 'flat_plate_external' in geometry_lower and flow_type.lower() == 'forced':
                     # Use ht.conv_external meta-function for plates
                     from ht.conv_external import Nu_external_horizontal_plate
                     nusselt_number = Nu_external_horizontal_plate(reynolds_number, prandtl_number)
@@ -452,9 +633,12 @@ def calculate_convection_coefficient(
                 
                 elif 'sphere' in geometry_lower:
                     if flow_type.lower() == 'forced':
-                        # Whitaker correlation for forced flow over sphere
+                        # Whitaker correlation for forced flow over sphere (standard textbook)
+                        # Nu = 2 + (0.4*Re^0.5 + 0.06*Re^(2/3)) * Pr^0.4 * (mu/mu_s)^0.25
+                        # Note: No ht library equivalent exists for forced sphere convection
+                        # Viscosity ratio correction omitted (approximation)
                         nusselt_number = 2 + (0.4 * math.sqrt(reynolds_number) + 0.06 * reynolds_number**(2/3)) * prandtl_number**0.4
-                    else:  # Natural convection
+                    else:  # Natural convection - use ht library
                         from ht.conv_free_immersed import Nu_sphere_Churchill
                         g = 9.81
                         beta = 1.0 / film_temperature
@@ -506,47 +690,16 @@ def calculate_convection_coefficient(
                             nusselt_number = 0.5 * rayleigh**(1/4)
                 
             except Exception as ht_error:
-                if strict:
-                    raise
-                logger.warning(f"Error using HT library correlations: {ht_error}")
-                # Fall back to basic correlations
-                nusselt_number = None
-        
-        # If no nusselt_number was calculated using HT, use fallback correlations
+                # Fail loudly - do not silently fall back to basic correlations
+                logger.error(f"Error using HT library correlations: {ht_error}")
+                raise
+
+        # Verify we calculated a Nusselt number
         if nusselt_number is None:
-            if strict:
-                raise ValueError("Could not calculate Nusselt number with strict=True")
-            if flow_type.lower() == 'forced':
-                if 'pipe_internal' in geometry_lower:
-                    # Basic Dittus-Boelter
-                    if reynolds_number < 2300:  # Laminar
-                        nusselt_number = 3.66
-                    else:  # Turbulent
-                        nusselt_number = 0.023 * reynolds_number**0.8 * prandtl_number**0.4
-                else:
-                    # Use helper function for external flows
-                    nusselt_number = calculate_nusselt_number_external_flow(
-                        reynolds_number, prandtl_number, geometry)
-            else:  # Natural
-                # Basic natural convection fallback
-                g = 9.81
-                beta = 1.0 / film_temperature
-                delta_t = abs(surface_temperature - bulk_fluid_temperature)
-                kinematic_viscosity = dynamic_viscosity / density
-                
-                grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
-                rayleigh = grashof * prandtl_number
-                
-                # Very basic correlation for natural convection
-                nusselt_number = 0.54 * rayleigh**(1/4)
-        
+            raise ValueError(f"Could not calculate Nusselt number for geometry='{geometry}', flow_type='{flow_type}'")
+
         # Calculate convection coefficient from Nusselt number
-        if nusselt_number is not None:
-            convection_coefficient = nusselt_number * thermal_conductivity / characteristic_dimension
-        else:
-            return json.dumps({
-                "error": "Could not calculate Nusselt number for the given conditions."
-            })
+        convection_coefficient = nusselt_number * thermal_conductivity / characteristic_dimension
         
         # Prepare result
         result = {
