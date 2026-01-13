@@ -84,7 +84,9 @@ def pipe_heat_management(
     soil_conductivity_w_mk: Optional[float] = None,
     ground_surface_temperature_K: Optional[float] = None,
     # Objectives
-    solve_for: Optional[str] = None,  # 'heat_trace_w_per_m', 'heat_trace_steady_w_per_m', 'heat_trace_delta_w_per_m', 'freeze_protection_w_per_m', 'R_value', 'freeze_time_h'
+    solve_for: Optional[
+        str
+    ] = None,  # 'heat_trace_w_per_m', 'heat_trace_steady_w_per_m', 'heat_trace_delta_w_per_m', 'freeze_protection_w_per_m', 'R_value', 'freeze_time_h'
     target_temperature_K: Optional[float] = None,  # For maintenance
     target_heat_loss_w_per_m: Optional[float] = None,
     # Freeze analysis
@@ -237,7 +239,12 @@ def pipe_heat_management(
         # Solve-for handling
         if solve_for:
             s = str(solve_for).lower()
-            if s in {"heat_trace_w_per_m", "heat_trace_steady_w_per_m", "freeze_protection_w_per_m", "heat_trace_delta_w_per_m"}:
+            if s in {
+                "heat_trace_w_per_m",
+                "heat_trace_steady_w_per_m",
+                "freeze_protection_w_per_m",
+                "heat_trace_delta_w_per_m",
+            }:
                 # Prepare common values
                 q_now = float(result.get("heat_loss_per_length_w_m", 0.0))
                 warnings: List[str] = []
@@ -280,46 +287,54 @@ def pipe_heat_management(
                             "Ambient >= maintenance target; heat trace may not be required under these conditions."
                         )
 
-                    result.update({
-                        "mode": "solve_for",
-                        "solve_for": s,
-                        "calculation_method": "steady_state_at_target_temperature",
-                        "steady_state_loss_at_internal_w_per_m": q_now,
-                        "steady_state_loss_at_target_w_per_m": q_target,
-                        "required_heat_trace_w_per_m": required,
-                        "heat_trace_safety_factor_used": float(heat_trace_safety_factor),
-                        "heat_trace_sizing_recommendation_w_per_m": rec,
-                        **({"catalog_rating_selected_w_per_m": selected} if selected is not None else {}),
-                        "target_temperature_K_used": maintenance_target_K,
-                        "warnings": warnings,
-                    })
+                    result.update(
+                        {
+                            "mode": "solve_for",
+                            "solve_for": s,
+                            "calculation_method": "steady_state_at_target_temperature",
+                            "steady_state_loss_at_internal_w_per_m": q_now,
+                            "steady_state_loss_at_target_w_per_m": q_target,
+                            "required_heat_trace_w_per_m": required,
+                            "heat_trace_safety_factor_used": float(heat_trace_safety_factor),
+                            "heat_trace_sizing_recommendation_w_per_m": rec,
+                            **({"catalog_rating_selected_w_per_m": selected} if selected is not None else {}),
+                            "target_temperature_K_used": maintenance_target_K,
+                            "warnings": warnings,
+                        }
+                    )
                     result.update(details)
 
                 elif s in {"heat_trace_w_per_m", "heat_trace_steady_w_per_m"}:
                     if target_temperature_K is None and target_heat_loss_w_per_m is None:
-                        return json.dumps({
-                            "error": "Provide target_temperature_K for steady-state sizing or target_heat_loss_w_per_m to cap losses."
-                        })
+                        return json.dumps(
+                            {
+                                "error": "Provide target_temperature_K for steady-state sizing or target_heat_loss_w_per_m to cap losses."
+                            }
+                        )
 
                     # If a heat loss cap is provided, compute delta from current condition
                     if target_heat_loss_w_per_m is not None and target_temperature_K is None:
                         q_trace_delta = max(0.0, q_now - float(target_heat_loss_w_per_m))
-                        result.update({
-                            "mode": "solve_for",
-                            "solve_for": s,
-                            "calculation_method": "delta_to_cap_current_loss",
-                            "steady_state_loss_at_internal_w_per_m": q_now,
-                            "target_heat_loss_w_per_m": float(target_heat_loss_w_per_m),
-                            "additional_heat_trace_required_w_per_m": q_trace_delta,
-                            "explanation": "Additional power needed to reduce current steady-state loss down to target_heat_loss_w_per_m.",
-                        })
+                        result.update(
+                            {
+                                "mode": "solve_for",
+                                "solve_for": s,
+                                "calculation_method": "delta_to_cap_current_loss",
+                                "steady_state_loss_at_internal_w_per_m": q_now,
+                                "target_heat_loss_w_per_m": float(target_heat_loss_w_per_m),
+                                "additional_heat_trace_required_w_per_m": q_trace_delta,
+                                "explanation": "Additional power needed to reduce current steady-state loss down to target_heat_loss_w_per_m.",
+                            }
+                        )
                     else:
                         # Steady-state at target temperature
                         q_target_obj = _steady_state_loss_at_temperature(float(target_temperature_K))
                         if "error" in q_target_obj:
                             return json.dumps({"error": q_target_obj["error"]})
                         q_target = float(q_target_obj["q_w_m"])
-                        details_key = "buried_details_at_target" if installation_lower == "buried" else "surface_details_at_target"
+                        details_key = (
+                            "buried_details_at_target" if installation_lower == "buried" else "surface_details_at_target"
+                        )
                         details[details_key] = q_target_obj.get("details")
                         required = max(0.0, q_target)
                         delta_info = max(0.0, q_now - q_target)
@@ -329,17 +344,19 @@ def pipe_heat_management(
                                 "Computed steady-state heat loss at target_temperature_K (maintenance). The 'additional delta power' shown is informational."
                             )
 
-                        result.update({
-                            "mode": "solve_for",
-                            "solve_for": s,
-                            "calculation_method": "steady_state_at_target_temperature",
-                            "steady_state_loss_at_internal_w_per_m": q_now,
-                            "steady_state_loss_at_target_w_per_m": q_target,
-                            "required_heat_trace_w_per_m": required,
-                            "additional_heat_trace_delta_w_per_m": delta_info,
-                            "target_temperature_K_used": float(target_temperature_K),
-                            "warnings": warnings,
-                        })
+                        result.update(
+                            {
+                                "mode": "solve_for",
+                                "solve_for": s,
+                                "calculation_method": "steady_state_at_target_temperature",
+                                "steady_state_loss_at_internal_w_per_m": q_now,
+                                "steady_state_loss_at_target_w_per_m": q_target,
+                                "required_heat_trace_w_per_m": required,
+                                "additional_heat_trace_delta_w_per_m": delta_info,
+                                "target_temperature_K_used": float(target_temperature_K),
+                                "warnings": warnings,
+                            }
+                        )
                         result.update(details)
 
                 elif s == "heat_trace_delta_w_per_m":
@@ -353,19 +370,21 @@ def pipe_heat_management(
                     delta_power = max(0.0, q_now - q_target)
                     details_key = "buried_details_at_target" if installation_lower == "buried" else "surface_details_at_target"
                     details[details_key] = q_target_obj.get("details")
-                    result.update({
-                        "mode": "solve_for",
-                        "solve_for": s,
-                        "calculation_method": "delta_between_internal_and_target",
-                        "steady_state_loss_at_internal_w_per_m": q_now,
-                        "steady_state_loss_at_target_w_per_m": q_target,
-                        "additional_heat_trace_delta_w_per_m": delta_power,
-                        "target_temperature_K_used": float(target_temperature_K),
-                    })
+                    result.update(
+                        {
+                            "mode": "solve_for",
+                            "solve_for": s,
+                            "calculation_method": "delta_between_internal_and_target",
+                            "steady_state_loss_at_internal_w_per_m": q_now,
+                            "steady_state_loss_at_target_w_per_m": q_target,
+                            "additional_heat_trace_delta_w_per_m": delta_power,
+                            "target_temperature_K_used": float(target_temperature_K),
+                        }
+                    )
             elif s == "freeze_time_h":
                 # Simple energy inventory to reach freeze_temperature and freeze
                 Di = float(pipe_inner_diameter_m or (0.8 * float(outer_diameter_m)))
-                area_flow = math.pi * (Di ** 2) / 4.0
+                area_flow = math.pi * (Di**2) / 4.0
                 vol_per_m = area_flow * 1.0  # 1 m
                 rho = float(fluid_density_kg_m3 or 1000.0)
                 cp = float(fluid_cp_j_kgk or 4180.0)
@@ -376,15 +395,17 @@ def pipe_heat_management(
                 energy_j = sensible + latent
                 q_net = max(1e-6, result["heat_loss_per_length_w_m"] - float(heat_trace_w_per_m))  # W/m
                 t_s = energy_j / q_net
-                result.update({
-                    "mode": "solve_for",
-                    "solve_for": s,
-                    "freeze_time_hours": t_s / 3600.0,
-                    "assumptions": {
-                        "includes_latent": include_latent_heat,
-                        "net_loss_w_per_m": q_net,
-                    },
-                })
+                result.update(
+                    {
+                        "mode": "solve_for",
+                        "solve_for": s,
+                        "freeze_time_hours": t_s / 3600.0,
+                        "assumptions": {
+                            "includes_latent": include_latent_heat,
+                            "net_loss_w_per_m": q_net,
+                        },
+                    }
+                )
             elif s == "r_value":
                 return json.dumps({"error": "R_value solve not yet implemented for pipe_heat_management"})
             else:

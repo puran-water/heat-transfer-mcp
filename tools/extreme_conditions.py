@@ -85,21 +85,23 @@ def extreme_conditions(
         return json.dumps({"error": str(ve)})
 
     if not METEOSTAT_AVAILABLE or not PANDAS_AVAILABLE:
-        return json.dumps({
-            "error": "Meteostat and pandas are required for extreme conditions analysis",
-            "latitude": latitude,
-            "longitude": longitude,
-            "start_date": start_date,
-            "end_date": end_date,
-        })
+        return json.dumps(
+            {
+                "error": "Meteostat and pandas are required for extreme conditions analysis",
+                "latitude": latitude,
+                "longitude": longitude,
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+        )
 
     try:
         from meteostat import Point, Daily, Hourly
         import pandas as pd
 
         # Parse date strings to datetime objects
-        start_dt = datetime.strptime(start_date, '%Y-%m-%d') if isinstance(start_date, str) else start_date
-        end_dt = datetime.strptime(end_date, '%Y-%m-%d') if isinstance(end_date, str) else end_date
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d") if isinstance(start_date, str) else start_date
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d") if isinstance(end_date, str) else end_date
 
         loc = Point(float(latitude), float(longitude))
         if time_resolution.lower() == "hourly":
@@ -117,7 +119,9 @@ def extreme_conditions(
                 "time_resolution": time_resolution,
                 "date_range": {"start": start_date, "end": end_date},
                 "data_points": len(ds),
-                "available_metrics": [col for col in ['tmin', 'tavg', 'tmax', 'wspd', 'rhum', 'tdew', 'tsun'] if col in ds.columns],
+                "available_metrics": [
+                    col for col in ["tmin", "tavg", "tmax", "wspd", "rhum", "tdew", "tsun"] if col in ds.columns
+                ],
             },
             "percentiles": {},
         }
@@ -139,9 +143,15 @@ def extreme_conditions(
             # Convert to cold percentile: p=0.99 -> use 0.01 quantile for cold design
             cold_quantile = 1.0 - p if p > 0.5 else p
             label = f"p{int(p*100)}_cold"
-            temps[label] = float(temp_series.quantile(cold_quantile)) if pd.notnull(temp_series.quantile(cold_quantile)) else None
-        
-        out["percentiles"]["temperature_c"] = {"basis": temp_basis, "values": temps, "note": "p99_cold means 99% of days are warmer"}
+            temps[label] = (
+                float(temp_series.quantile(cold_quantile)) if pd.notnull(temp_series.quantile(cold_quantile)) else None
+            )
+
+        out["percentiles"]["temperature_c"] = {
+            "basis": temp_basis,
+            "values": temps,
+            "note": "p99_cold means 99% of days are warmer",
+        }
 
         # Wind percentiles
         wind_stats = None
@@ -170,7 +180,7 @@ def extreme_conditions(
                     "temperature_threshold_c": float(temp_threshold) if pd.notnull(temp_threshold) else None,
                     "wind_p95_m_s": float(w_ms.quantile(0.95)) if pd.notnull(w_ms.quantile(0.95)) else None,
                     "count": int(subset.shape[0]),
-                    "note": f"Wind speed at 95th percentile during coldest {100*(1-cold_quantile):.0f}% of days"
+                    "note": f"Wind speed at 95th percentile during coldest {100*(1-cold_quantile):.0f}% of days",
                 }
         out["concurrent_extremes"] = concurrent
 

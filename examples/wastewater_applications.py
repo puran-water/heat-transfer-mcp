@@ -74,6 +74,7 @@ def main():
     # Convert units: 300 HP ≈ 223,710 W, 250 GPM ≈ 15.8 kg/s, 200 GPM ≈ 12.6 kg/s
     # 150°F ≈ 338.7 K, 60°F ≈ 288.7 K
     import json
+
     heat_recovery_json = size_shell_tube_heat_exchanger(
         heat_duty_W=223710,  # 300 HP in W
         hot_inlet_temp_K=338.7,  # 150°F

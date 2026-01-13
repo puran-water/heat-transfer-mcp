@@ -4,23 +4,26 @@
 from setuptools import setup, find_packages
 import os
 
+
 # Read requirements from requirements.txt
 def read_requirements():
-    requirements_path = os.path.join(os.path.dirname(__file__), 'requirements.txt')
+    requirements_path = os.path.join(os.path.dirname(__file__), "requirements.txt")
     try:
-        with open(requirements_path, 'r') as f:
-            return [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        with open(requirements_path, "r") as f:
+            return [line.strip() for line in f if line.strip() and not line.startswith("#")]
     except FileNotFoundError:
         return []
 
+
 # Read long description from README
 def read_readme():
-    readme_path = os.path.join(os.path.dirname(__file__), 'README.md')
+    readme_path = os.path.join(os.path.dirname(__file__), "README.md")
     try:
-        with open(readme_path, 'r', encoding='utf-8') as f:
+        with open(readme_path, "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
         return "MCP server for thermal engineering calculations with automatic unit conversion"
+
 
 setup(
     name="heat-transfer-mcp",

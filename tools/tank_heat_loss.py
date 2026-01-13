@@ -50,6 +50,7 @@ logger = logging.getLogger("heat-transfer-mcp.tank_heat_loss")
 
 # ----------------------------- Data Structures ----------------------------- #
 
+
 @dataclass
 class AmbientSpec:
     T_air_K: float
@@ -60,6 +61,7 @@ class AmbientSpec:
 
 
 # ------------------------------ Helper Logic ------------------------------ #
+
 
 def _make_wall_layers_from_R(
     total_R_insulation_m2K_W: float,
@@ -107,8 +109,8 @@ def _percentile_weather(
         import pandas as pd
 
         # Parse date strings to datetime objects
-        start_dt = datetime.strptime(start_date, '%Y-%m-%d') if isinstance(start_date, str) else start_date
-        end_dt = datetime.strptime(end_date, '%Y-%m-%d') if isinstance(end_date, str) else end_date
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d") if isinstance(start_date, str) else start_date
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d") if isinstance(end_date, str) else end_date
 
         loc = Point(float(latitude), float(longitude))
         if time_resolution.lower() == "hourly":
@@ -129,7 +131,7 @@ def _percentile_weather(
         # For cold design, convert percentile: p=0.99 -> use 0.01 quantile
         cold_quantile = 1.0 - percentile if percentile > 0.5 else percentile
         temp_percentile_C = ds[col_temp].quantile(cold_quantile)
-        
+
         # For wind during cold periods, use high percentile
         # First find cold days, then compute wind percentile within those
         if col_wind and col_wind in ds.columns:
@@ -178,7 +180,7 @@ def _ambient_from_inputs(
     Returns AmbientSpec and optional info dict describing the source.
     """
     info: Dict[str, Any] = {}
-    
+
     # Determine weather mode
     if weather_mode == "auto":
         # Use Meteostat if coordinates available
@@ -186,7 +188,7 @@ def _ambient_from_inputs(
             weather_mode = "meteostat"
         else:
             weather_mode = "direct"
-    
+
     # Try to get weather data if coordinates are available (even if direct values provided)
     weather_data = None
     dew_point_k = None
@@ -194,9 +196,9 @@ def _ambient_from_inputs(
         try:
             weather_service = get_weather_service()
             # Convert dates if provided as strings
-            start_dt = datetime.strptime(start_date, '%Y-%m-%d') if isinstance(start_date, str) and start_date else None
-            end_dt = datetime.strptime(end_date, '%Y-%m-%d') if isinstance(end_date, str) and end_date else None
-            
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d") if isinstance(start_date, str) and start_date else None
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d") if isinstance(end_date, str) and end_date else None
+
             # Get design conditions from weather service
             weather_data = weather_service.get_design_conditions(
                 lat=float(latitude),
@@ -204,25 +206,25 @@ def _ambient_from_inputs(
                 start_date=start_dt,
                 end_date=end_dt,
                 percentiles=[design_percentile] if design_percentile else [0.95],
-                time_resolution=time_resolution
+                time_resolution=time_resolution,
             )
-            
+
             # Extract dew point for sky temperature calculation
             if "concurrent_conditions" in weather_data:
                 dew_point_k = weather_data["concurrent_conditions"].get("dew_point_k")
         except Exception as e:
             logger.warning(f"Failed to fetch weather data: {e}")
             weather_data = None
-    
+
     # Hybrid mode - use provided ambient if given, else use fetched
     if ambient_air_temperature is not None and wind_speed is not None:
         # Direct values provided
         T_air = float(ambient_air_temperature)
-        
+
         # Calculate sky temperature using dew point if available
         if sky_temperature is None and dew_point_k:
             sky_temperature = estimate_sky_temperature(T_air, dew_point_k)
-        
+
         ambient = AmbientSpec(
             T_air_K=T_air,
             wind_m_s=float(wind_speed),
@@ -236,7 +238,7 @@ def _ambient_from_inputs(
             info["dew_point_k"] = dew_point_k
             info["sky_temperature_k"] = sky_temperature
         return ambient, info
-    
+
     # Use fetched weather data if available
     if weather_data and "design_conditions" in weather_data and design_percentile:
         # Find the appropriate percentile data
@@ -244,11 +246,11 @@ def _ambient_from_inputs(
         if percentile_key in weather_data["design_conditions"]:
             design_cond = weather_data["design_conditions"][percentile_key]
             T_air = design_cond["temp_k"]
-            
+
             # Calculate sky temperature using dew point if available
             if sky_temperature is None and dew_point_k:
                 sky_temperature = estimate_sky_temperature(T_air, dew_point_k)
-            
+
             ambient = AmbientSpec(
                 T_air_K=T_air,
                 wind_m_s=design_cond.get("wind_m_s", 2.0),
@@ -500,6 +502,7 @@ def _grid_sweep(base_params: Dict[str, Any], sweep: Dict[str, List[Any]]) -> Lis
 
 # --------------------------------- Tool API -------------------------------- #
 
+
 def tank_heat_loss(
     # Geometry and configuration
     geometry: str,
@@ -547,7 +550,7 @@ def tank_heat_loss(
         contents_temperature: Internal contents temperature (K).
         fluid_name_internal: Internal fluid name (default 'water').
         fluid_name_external: External fluid name (default 'air').
-        
+
         headspace_height_m: Height of gas headspace above liquid (m). For digesters/tanks with gas space.
         headspace_fluid: Fluid in headspace ('air', 'biogas', etc.). Default 'air'.
         headspace_h_inner_override_w_m2k: Override inner h for headspace zones. If None, uses 5 W/m²K for stagnant gas.
@@ -647,30 +650,32 @@ def tank_heat_loss(
                 if "error" in data:
                     sweep_results.append({"params": p, "error": data["error"]})
                 else:
-                    sweep_results.append({
-                        "params": p,
-                        "heat_loss_w": data.get("total_heat_rate_loss_w"),
-                        "surface_temp_K": data.get("estimated_outer_surface_temp_k"),
-                        "details": data,
-                    })
-            return json.dumps({
-                "mode": "sweep",
-                "results": sweep_results,
-                "ambient": ambient.__dict__,
-                "ambient_info": ambient_info,
-                "calculation_methods": {
-                    "surface": "Iterative balance using convection + radiation (ht correlations via subtool)",
-                },
-            })
+                    sweep_results.append(
+                        {
+                            "params": p,
+                            "heat_loss_w": data.get("total_heat_rate_loss_w"),
+                            "surface_temp_K": data.get("estimated_outer_surface_temp_k"),
+                            "details": data,
+                        }
+                    )
+            return json.dumps(
+                {
+                    "mode": "sweep",
+                    "results": sweep_results,
+                    "ambient": ambient.__dict__,
+                    "ambient_info": ambient_info,
+                    "calculation_methods": {
+                        "surface": "Iterative balance using convection + radiation (ht correlations via subtool)",
+                    },
+                }
+            )
 
         # Solve-for mode
         if solve_for:
             sf = str(solve_for).lower()
             if sf == "r_value":
                 if target_heat_loss_w is None:
-                    return json.dumps({
-                        "error": "target_heat_loss_w is required when solve_for='R_value'"
-                    })
+                    return json.dumps({"error": "target_heat_loss_w is required when solve_for='R_value'"})
                 solve_res = _solve_for_R_value(
                     target_heat_loss_W=float(target_heat_loss_w),
                     geometry=geometry,
@@ -683,61 +688,63 @@ def tank_heat_loss(
                     base_wall_layers=base_layers or [],
                     default_k_insulation=float(assumed_insulation_k_w_mk),
                 )
-                return json.dumps({
-                    "mode": "solve_for",
-                    "solve_for": "R_value",
-                    "result": solve_res,
-                    "ambient": ambient.__dict__,
-                    "ambient_info": ambient_info,
-                    "calculation_methods": {
-                        "solver": "Hybrid secant/bisection on R to match target Q",
-                        "surface": "Iterative balance using convection + radiation",
-                    },
-                })
+                return json.dumps(
+                    {
+                        "mode": "solve_for",
+                        "solve_for": "R_value",
+                        "result": solve_res,
+                        "ambient": ambient.__dict__,
+                        "ambient_info": ambient_info,
+                        "calculation_methods": {
+                            "solver": "Hybrid secant/bisection on R to match target Q",
+                            "surface": "Iterative balance using convection + radiation",
+                        },
+                    }
+                )
             else:
-                return json.dumps({
-                    "error": f"solve_for='{solve_for}' not supported yet; currently supported: ['R_value']"
-                })
+                return json.dumps({"error": f"solve_for='{solve_for}' not supported yet; currently supported: ['R_value']"})
 
         # Standard single evaluation (no sweep/no solve)
         # Check if headspace modeling is needed
-        if headspace_height_m > 0 and 'cylinder_tank' in geometry.lower():
+        if headspace_height_m > 0 and "cylinder_tank" in geometry.lower():
             # Headspace modeling - split tank into zones
-            diameter = dimensions.get('diameter', 0)
-            height = dimensions.get('height', dimensions.get('length', 0))
+            diameter = dimensions.get("diameter", 0)
+            height = dimensions.get("height", dimensions.get("length", 0))
             if headspace_height_m >= height:
                 return json.dumps({"error": "headspace_height_m must be less than total height/length"})
-            
+
             # Calculate zone areas
             liquid_height = max(0, height - headspace_height_m)
-            
+
             # Wetted wall area (in contact with liquid)
             wetted_wall_area = math.pi * diameter * liquid_height
-            
+
             # Dry wall area (in contact with gas)
             dry_wall_area = math.pi * diameter * headspace_height_m
-            
+
             # Roof area (top endcap)
-            roof_area = math.pi * (diameter/2)**2
-            
+            roof_area = math.pi * (diameter / 2) ** 2
+
             # Bottom area (always wetted)
-            bottom_area = math.pi * (diameter/2)**2
-            
+            bottom_area = math.pi * (diameter / 2) ** 2
+
             # Total areas for each zone
             wetted_total_area = wetted_wall_area + bottom_area
             dry_total_area = dry_wall_area + roof_area
-            
+
             # Estimate gas temperature (simple weighted average for now)
             # More sophisticated: solve energy balance in gas space
             gas_temp_K = 0.7 * contents_temperature + 0.3 * ambient.T_air_K
-            
+
             # Inner h for headspace (natural convection in enclosed space)
-            h_inner_headspace = headspace_h_inner_override_w_m2k if headspace_h_inner_override_w_m2k else 5.0  # W/m²K for stagnant gas
-            
+            h_inner_headspace = (
+                headspace_h_inner_override_w_m2k if headspace_h_inner_override_w_m2k else 5.0
+            )  # W/m²K for stagnant gas
+
             # Calculate wetted zone heat loss
-            wetted_dims = {'diameter': diameter, 'height': liquid_height}
+            wetted_dims = {"diameter": diameter, "height": liquid_height}
             wetted_data = _run_surface_solver(
-                geometry='vertical_cylinder_tank',
+                geometry="vertical_cylinder_tank",
                 dimensions=wetted_dims,
                 internal_temperature=contents_temperature,
                 surface_emissivity=surface_emissivity,
@@ -747,14 +754,14 @@ def tank_heat_loss(
                 wall_layers=base_layers,
                 overall_heat_transfer_coefficient_U=None,
             )
-            
+
             # Calculate dry zone heat loss (roof + dry wall)
             # Need to modify internal h for this zone
-            dry_dims = {'diameter': diameter, 'height': headspace_height_m}
+            dry_dims = {"diameter": diameter, "height": headspace_height_m}
             # Create modified wall layers with adjusted inner h
             # This is approximate - ideally we'd pass h_inner to surface solver
             dry_data = _run_surface_solver(
-                geometry='vertical_cylinder_tank',
+                geometry="vertical_cylinder_tank",
                 dimensions=dry_dims,
                 internal_temperature=gas_temp_K,  # Use gas temperature
                 surface_emissivity=surface_emissivity,
@@ -765,25 +772,25 @@ def tank_heat_loss(
                 overall_heat_transfer_coefficient_U=None,
                 h_inner_override_w_m2k=h_inner_headspace,
             )
-            
+
             # Combine results
             if "error" in wetted_data:
                 return json.dumps({"error": f"Wetted zone: {wetted_data['error']}"})
             if "error" in dry_data:
                 return json.dumps({"error": f"Dry zone: {dry_data['error']}"})
-            
+
             # Extract zone totals
-            wetted_q = wetted_data.get('total_heat_rate_loss_w', 0.0)
-            dry_q = dry_data.get('total_heat_rate_loss_w', 0.0)
-            wetted_conv = wetted_data.get('convective_heat_rate_w', 0.0)
-            dry_conv = dry_data.get('convective_heat_rate_w', 0.0)
-            wetted_rad = wetted_data.get('radiative_heat_rate_w', 0.0)
-            dry_rad = dry_data.get('radiative_heat_rate_w', 0.0)
+            wetted_q = wetted_data.get("total_heat_rate_loss_w", 0.0)
+            dry_q = dry_data.get("total_heat_rate_loss_w", 0.0)
+            wetted_conv = wetted_data.get("convective_heat_rate_w", 0.0)
+            dry_conv = dry_data.get("convective_heat_rate_w", 0.0)
+            wetted_rad = wetted_data.get("radiative_heat_rate_w", 0.0)
+            dry_rad = dry_data.get("radiative_heat_rate_w", 0.0)
 
             # Remove the interior gas/liquid interface contribution (not an external surface)
             # With updated surface area logic, the interface disc is only present in the wetted zone model.
-            interface_area = math.pi * (diameter/2)**2
-            wetted_area_model = max(wetted_data.get('outer_surface_area_m2', wetted_total_area), 1e-9)
+            interface_area = math.pi * (diameter / 2) ** 2
+            wetted_area_model = max(wetted_data.get("outer_surface_area_m2", wetted_total_area), 1e-9)
             qpp_w_total = wetted_q / wetted_area_model
             qpp_w_conv = wetted_conv / wetted_area_model
             qpp_w_rad = wetted_rad / wetted_area_model
@@ -791,35 +798,36 @@ def tank_heat_loss(
             total_surface_q = wetted_q + dry_q - interface_area * qpp_w_total
             total_conv_q = wetted_conv + dry_conv - interface_area * qpp_w_conv
             total_rad_q = wetted_rad + dry_rad - interface_area * qpp_w_rad
-            
+
             # Air-exposed areas only (exclude bottom)
             air_exposed_area = wetted_wall_area + dry_wall_area + roof_area
             surface_data = {
-                'total_heat_rate_loss_w': total_surface_q,
-                'convective_heat_rate_w': total_conv_q,
-                'radiative_heat_rate_w': total_rad_q,
-                'solar_gain_rate_w': wetted_data.get('solar_gain_rate_w', 0) + dry_data.get('solar_gain_rate_w', 0),
-                'estimated_outer_surface_temp_k': (
-                    (wetted_data.get('estimated_outer_surface_temp_k', 0) * wetted_wall_area) +
-                    (dry_data.get('estimated_outer_surface_temp_k', 0) * (dry_wall_area + roof_area))
-                ) / max(air_exposed_area, 1e-9),
-                'estimated_outer_surface_temp_c': None,  # Will calculate below
-                'outer_surface_area_m2': air_exposed_area,
-                'external_convection_coefficient_w_m2k': wetted_data.get('external_convection_coefficient_w_m2k'),
-                'internal_plus_wall_resistance_k_w': wetted_data.get('internal_plus_wall_resistance_k_w'),
-                'headspace_info': {
-                    'headspace_height_m': headspace_height_m,
-                    'liquid_height_m': liquid_height,
-                    'gas_temp_estimate_k': gas_temp_K,
-                    'gas_temp_estimate_c': gas_temp_K - 273.15,
-                    'wetted_area_m2': wetted_wall_area,  # air-exposed wetted wall only
-                    'dry_area_m2': dry_wall_area + roof_area,
-                    'wetted_heat_loss_w': wetted_q,
-                    'dry_heat_loss_w': dry_q,
-                    'h_inner_headspace_w_m2k': h_inner_headspace,
-                }
+                "total_heat_rate_loss_w": total_surface_q,
+                "convective_heat_rate_w": total_conv_q,
+                "radiative_heat_rate_w": total_rad_q,
+                "solar_gain_rate_w": wetted_data.get("solar_gain_rate_w", 0) + dry_data.get("solar_gain_rate_w", 0),
+                "estimated_outer_surface_temp_k": (
+                    (wetted_data.get("estimated_outer_surface_temp_k", 0) * wetted_wall_area)
+                    + (dry_data.get("estimated_outer_surface_temp_k", 0) * (dry_wall_area + roof_area))
+                )
+                / max(air_exposed_area, 1e-9),
+                "estimated_outer_surface_temp_c": None,  # Will calculate below
+                "outer_surface_area_m2": air_exposed_area,
+                "external_convection_coefficient_w_m2k": wetted_data.get("external_convection_coefficient_w_m2k"),
+                "internal_plus_wall_resistance_k_w": wetted_data.get("internal_plus_wall_resistance_k_w"),
+                "headspace_info": {
+                    "headspace_height_m": headspace_height_m,
+                    "liquid_height_m": liquid_height,
+                    "gas_temp_estimate_k": gas_temp_K,
+                    "gas_temp_estimate_c": gas_temp_K - 273.15,
+                    "wetted_area_m2": wetted_wall_area,  # air-exposed wetted wall only
+                    "dry_area_m2": dry_wall_area + roof_area,
+                    "wetted_heat_loss_w": wetted_q,
+                    "dry_heat_loss_w": dry_q,
+                    "h_inner_headspace_w_m2k": h_inner_headspace,
+                },
             }
-            surface_data['estimated_outer_surface_temp_c'] = surface_data['estimated_outer_surface_temp_k'] - 273.15
+            surface_data["estimated_outer_surface_temp_c"] = surface_data["estimated_outer_surface_temp_k"] - 273.15
         else:
             # Standard calculation without headspace
             surface_data = _run_surface_solver(
@@ -838,7 +846,7 @@ def tank_heat_loss(
 
         # Ground/foundation coupling
         geometry_l = (geometry or "").lower()
-        is_vertical_tank = ("vertical" in geometry_l and "tank" in geometry_l)
+        is_vertical_tank = "vertical" in geometry_l and "tank" in geometry_l
         effective_include_ground = include_ground_contact or is_vertical_tank
 
         # Build auto ground config for bottom contact if needed
@@ -878,31 +886,29 @@ def tank_heat_loss(
             try:
                 # Fetch weather data once for all percentiles
                 weather_service = get_weather_service()
-                start_dt = datetime.strptime(start_date, '%Y-%m-%d') if isinstance(start_date, str) else start_date
-                end_dt = datetime.strptime(end_date, '%Y-%m-%d') if isinstance(end_date, str) else end_date
-                
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d") if isinstance(start_date, str) else start_date
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d") if isinstance(end_date, str) else end_date
+
                 weather_data = weather_service.get_design_conditions(
                     lat=float(latitude),
                     lon=float(longitude),
                     start_date=start_dt,
                     end_date=end_dt,
                     percentiles=percentiles,
-                    time_resolution=time_resolution
+                    time_resolution=time_resolution,
                 )
-                
+
                 if weather_data and "design_conditions" in weather_data:
                     for p in percentiles:
                         percentile_key = f"cold_{int(p*100)}th"
                         if percentile_key not in weather_data["design_conditions"]:
                             continue
-                        
+
                         design_cond = weather_data["design_conditions"][percentile_key]
                         amb_p = AmbientSpec(
-                            T_air_K=design_cond["temp_k"],
-                            wind_m_s=design_cond.get("wind_m_s", 2.0),
-                            T_sky_K=sky_temperature
+                            T_air_K=design_cond["temp_k"], wind_m_s=design_cond.get("wind_m_s", 2.0), T_sky_K=sky_temperature
                         )
-                        
+
                         sd = _run_surface_solver(
                             geometry=geometry,
                             dimensions=dimensions,
@@ -917,22 +923,24 @@ def tank_heat_loss(
                         if "error" in sd:
                             pr_list.append({"percentile": p, "error": sd["error"]})
                         else:
-                            pr_list.append({
-                                "percentile": p,
-                                "ambient": {"T_air_K": amb_p.T_air_K, "wind_m_s": amb_p.wind_m_s},
-                                "heat_loss_w": sd.get("total_heat_rate_loss_w"),
-                                "surface_temp_K": sd.get("estimated_outer_surface_temp_k"),
-                            })
+                            pr_list.append(
+                                {
+                                    "percentile": p,
+                                    "ambient": {"T_air_K": amb_p.T_air_K, "wind_m_s": amb_p.wind_m_s},
+                                    "heat_loss_w": sd.get("total_heat_rate_loss_w"),
+                                    "surface_temp_K": sd.get("estimated_outer_surface_temp_k"),
+                                }
+                            )
             except Exception as e:
                 logger.warning(f"Percentile analysis failed: {e}")
-            
+
             percentile_results = pr_list if pr_list else None
 
         # Extract transparency fields from surface_data
         sky_temp_k = surface_data.get("sky_temperature_k", ambient.T_sky_K)
         radiation_model = surface_data.get("radiation_model", {})
         warnings = surface_data.get("warnings", [])
-        
+
         result = {
             "total_heat_loss_w": total_Q,
             "sign_convention": "Positive = heat loss to ambient; Negative = heat gain from ambient",
@@ -975,7 +983,7 @@ def tank_heat_loss(
                 "headspace_height_m": headspace_height_m,
                 "headspace_fluid": headspace_fluid,
             },
-            "headspace_info": surface_data.get('headspace_info'),
+            "headspace_info": surface_data.get("headspace_info"),
             "percentile_analysis": percentile_results,
             "warnings": warnings,
         }

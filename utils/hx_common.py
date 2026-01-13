@@ -15,11 +15,7 @@ logger = logging.getLogger("heat-transfer-mcp.hx_common")
 
 
 def calculate_lmtd_with_check(
-    Thi: float,
-    Tho: float,
-    Tci: float,
-    Tco: float,
-    counterflow: bool = True
+    Thi: float, Tho: float, Tci: float, Tco: float, counterflow: bool = True
 ) -> Tuple[float, Optional[str]]:
     """
     Calculate LMTD with temperature crossover check.
@@ -59,13 +55,7 @@ def calculate_lmtd_with_check(
         return 0.0, str(e)
 
 
-def calculate_f_correction(
-    Thi: float,
-    Tho: float,
-    Tci: float,
-    Tco: float,
-    shells: int = 1
-) -> float:
+def calculate_f_correction(Thi: float, Tho: float, Tci: float, Tco: float, shells: int = 1) -> float:
     """
     Calculate LMTD correction factor for multi-pass shell-tube HX.
 
@@ -94,14 +84,7 @@ def calculate_f_correction(
         return 1.0
 
 
-def verify_heat_balance(
-    Q_duty: float,
-    U: float,
-    A: float,
-    LMTD: float,
-    F: float = 1.0,
-    tolerance_pct: float = 5.0
-) -> Dict:
+def verify_heat_balance(Q_duty: float, U: float, A: float, LMTD: float, F: float = 1.0, tolerance_pct: float = 5.0) -> Dict:
     """
     Verify heat balance: Q = U * A * LMTD * F.
 
@@ -128,16 +111,11 @@ def verify_heat_balance(
         "Q_from_UA_W": Q_from_UA,
         "error_pct": error_pct,
         "balance_satisfied": error_pct <= tolerance_pct,
-        "tolerance_pct": tolerance_pct
+        "tolerance_pct": tolerance_pct,
     }
 
 
-def format_temperature_output(
-    Thi: float,
-    Tho: float,
-    Tci: float,
-    Tco: float
-) -> Dict:
+def format_temperature_output(Thi: float, Tho: float, Tci: float, Tco: float) -> Dict:
     """
     Format temperatures in standard output structure.
 
@@ -164,13 +142,7 @@ def format_temperature_output(
     }
 
 
-def check_temperature_crossover(
-    Thi: float,
-    Tho: float,
-    Tci: float,
-    Tco: float,
-    counterflow: bool = True
-) -> Tuple[bool, str]:
+def check_temperature_crossover(Thi: float, Tho: float, Tci: float, Tco: float, counterflow: bool = True) -> Tuple[bool, str]:
     """
     Check for invalid temperature crossover.
 
@@ -199,10 +171,7 @@ def check_temperature_crossover(
     return True, "Temperature profile valid"
 
 
-def calculate_annulus_geometry(
-    D_outer: float,
-    D_inner: float
-) -> Dict:
+def calculate_annulus_geometry(D_outer: float, D_inner: float) -> Dict:
     """
     Calculate annulus geometry for double-pipe heat exchangers.
 
@@ -236,7 +205,7 @@ def calculate_annulus_geometry(
         "D_hydraulic_m": D_hydraulic,
         "D_equivalent_m": D_equivalent,
         "P_wetted_m": P_wetted,
-        "gap_m": (D_outer - D_inner) / 2
+        "gap_m": (D_outer - D_inner) / 2,
     }
 
 
@@ -249,7 +218,7 @@ def calculate_overall_U(
     k_wall: float,
     fouling_inner: float = 0.0,
     fouling_outer: float = 0.0,
-    reference: str = "outer"
+    reference: str = "outer",
 ) -> Dict:
     """
     Calculate overall heat transfer coefficient for cylindrical geometry.
@@ -275,11 +244,11 @@ def calculate_overall_U(
     r_o = D_inner / 2 + wall_thickness
 
     # Resistances (referenced to outer surface)
-    R_conv_inner = r_o / (r_i * h_inner) if h_inner > 0 else float('inf')
+    R_conv_inner = r_o / (r_i * h_inner) if h_inner > 0 else float("inf")
     R_fouling_inner = fouling_inner * (r_o / r_i)
     R_wall = (r_o * math.log(r_o / r_i)) / k_wall if r_o > r_i else 0
     R_fouling_outer = fouling_outer
-    R_conv_outer = 1 / h_outer if h_outer > 0 else float('inf')
+    R_conv_outer = 1 / h_outer if h_outer > 0 else float("inf")
 
     R_total = R_conv_inner + R_fouling_inner + R_wall + R_fouling_outer + R_conv_outer
 
@@ -301,16 +270,11 @@ def calculate_overall_U(
         "R_wall_m2K_W": R_wall,
         "R_fouling_outer_m2K_W": R_fouling_outer,
         "R_conv_outer_m2K_W": R_conv_outer,
-        "reference_surface": reference
+        "reference_surface": reference,
     }
 
 
-def calculate_effectiveness_ntu(
-    C_min: float,
-    C_max: float,
-    UA: float,
-    subtype: str = "counterflow"
-) -> Dict:
+def calculate_effectiveness_ntu(C_min: float, C_max: float, UA: float, subtype: str = "counterflow") -> Dict:
     """
     Calculate effectiveness and NTU for a heat exchanger.
 
@@ -345,5 +309,5 @@ def calculate_effectiveness_ntu(
         "C_min_W_K": C_min,
         "C_max_W_K": C_max,
         "UA_W_K": UA,
-        "subtype": subtype
+        "subtype": subtype,
     }

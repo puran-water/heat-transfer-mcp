@@ -145,18 +145,19 @@ def size_plate_heat_exchanger(
         if not FLUIDS_AVAILABLE:
             if strict:
                 return json.dumps({"error": "fluids library required with strict=True"})
-            return json.dumps({
-                "error": "fluids library not available for PHE sizing",
-                "suggestion": "Install with: pip install fluids>=1.0.0"
-            })
+            return json.dumps(
+                {
+                    "error": "fluids library not available for PHE sizing",
+                    "suggestion": "Install with: pip install fluids>=1.0.0",
+                }
+            )
 
         if not HT_AVAILABLE:
             if strict:
                 return json.dumps({"error": "ht library required with strict=True"})
-            return json.dumps({
-                "error": "ht library not available for PHE sizing",
-                "suggestion": "Install with: pip install ht>=1.2.0"
-            })
+            return json.dumps(
+                {"error": "ht library not available for PHE sizing", "suggestion": "Install with: pip install ht>=1.2.0"}
+            )
 
         # Handle auto-optimization: search across multiple design parameters
         if auto_optimize:
@@ -211,8 +212,7 @@ def size_plate_heat_exchanger(
                                 # Calculate score based on objective
                                 area = result["geometry"]["area_required_m2"]
                                 dP_max = max(
-                                    result["hydraulic"]["pressure_drop_hot_kPa"],
-                                    result["hydraulic"]["pressure_drop_cold_kPa"]
+                                    result["hydraulic"]["pressure_drop_hot_kPa"], result["hydraulic"]["pressure_drop_cold_kPa"]
                                 )
 
                                 if optimize_for == "area":
@@ -224,25 +224,29 @@ def size_plate_heat_exchanger(
                                 else:
                                     score = area
 
-                                all_candidates.append({
-                                    "config": {
-                                        "chevron_angle_deg": chevron,
-                                        "passes_hot": passes_h,
-                                        "passes_cold": passes_c,
-                                        "correlation": corr,
-                                    },
-                                    "score": score,
-                                    "plates": result["geometry"]["plates"],
-                                    "area_required_m2": result["geometry"]["area_required_m2"],
-                                    "U_W_m2K": result["thermal"]["U_W_m2K"],
-                                    "Re_hot": result["thermal"]["Re_hot"],
-                                    "Re_cold": result["thermal"]["Re_cold"],
-                                    "dP_hot_kPa": result["hydraulic"]["pressure_drop_hot_kPa"],
-                                    "dP_cold_kPa": result["hydraulic"]["pressure_drop_cold_kPa"],
-                                    "full_result": result,
-                                })
+                                all_candidates.append(
+                                    {
+                                        "config": {
+                                            "chevron_angle_deg": chevron,
+                                            "passes_hot": passes_h,
+                                            "passes_cold": passes_c,
+                                            "correlation": corr,
+                                        },
+                                        "score": score,
+                                        "plates": result["geometry"]["plates"],
+                                        "area_required_m2": result["geometry"]["area_required_m2"],
+                                        "U_W_m2K": result["thermal"]["U_W_m2K"],
+                                        "Re_hot": result["thermal"]["Re_hot"],
+                                        "Re_cold": result["thermal"]["Re_cold"],
+                                        "dP_hot_kPa": result["hydraulic"]["pressure_drop_hot_kPa"],
+                                        "dP_cold_kPa": result["hydraulic"]["pressure_drop_cold_kPa"],
+                                        "full_result": result,
+                                    }
+                                )
                         except Exception as e:
-                            logger.debug(f"Optimization candidate failed: chevron={chevron}, passes=({passes_h},{passes_c}), corr={corr}: {e}")
+                            logger.debug(
+                                f"Optimization candidate failed: chevron={chevron}, passes=({passes_h},{passes_c}), corr={corr}: {e}"
+                            )
                             continue
 
             if all_candidates:
@@ -250,42 +254,46 @@ def size_plate_heat_exchanger(
                 all_candidates.sort(key=lambda x: x["score"])
                 best = all_candidates[0]
 
-                return json.dumps({
-                    "optimization_mode": True,
-                    "optimize_for": optimize_for,
-                    "best_configuration": best["config"],
-                    "best_result": best["full_result"],
-                    "candidates_evaluated": len(all_candidates),
-                    "top_5_candidates": [
-                        {
-                            "config": c["config"],
-                            "score": c["score"],
-                            "plates": c["plates"],
-                            "area_m2": c["area_required_m2"],
-                            "U_W_m2K": c["U_W_m2K"],
-                            "Re_hot": c["Re_hot"],
-                            "Re_cold": c["Re_cold"],
-                            "dP_hot_kPa": c["dP_hot_kPa"],
-                            "dP_cold_kPa": c["dP_cold_kPa"],
-                        }
-                        for c in all_candidates[:5]
-                    ],
-                    "search_space": {
-                        "chevron_angle_deg": search_chevron_angles,
-                        "pass_configs": search_pass_configs,
-                        "correlations": search_correlations,
+                return json.dumps(
+                    {
+                        "optimization_mode": True,
+                        "optimize_for": optimize_for,
+                        "best_configuration": best["config"],
+                        "best_result": best["full_result"],
+                        "candidates_evaluated": len(all_candidates),
+                        "top_5_candidates": [
+                            {
+                                "config": c["config"],
+                                "score": c["score"],
+                                "plates": c["plates"],
+                                "area_m2": c["area_required_m2"],
+                                "U_W_m2K": c["U_W_m2K"],
+                                "Re_hot": c["Re_hot"],
+                                "Re_cold": c["Re_cold"],
+                                "dP_hot_kPa": c["dP_hot_kPa"],
+                                "dP_cold_kPa": c["dP_cold_kPa"],
+                            }
+                            for c in all_candidates[:5]
+                        ],
+                        "search_space": {
+                            "chevron_angle_deg": search_chevron_angles,
+                            "pass_configs": search_pass_configs,
+                            "correlations": search_correlations,
+                        },
                     }
-                })
+                )
             else:
-                return json.dumps({
-                    "error": "No feasible configuration found in optimization search",
-                    "search_space": {
-                        "chevron_angle_deg": search_chevron_angles,
-                        "pass_configs": search_pass_configs,
-                        "correlations": search_correlations,
-                    },
-                    "suggestion": "Try relaxing max_pressure_drop_kPa constraint or adjusting plate geometry"
-                })
+                return json.dumps(
+                    {
+                        "error": "No feasible configuration found in optimization search",
+                        "search_space": {
+                            "chevron_angle_deg": search_chevron_angles,
+                            "pass_configs": search_pass_configs,
+                            "correlations": search_correlations,
+                        },
+                        "suggestion": "Try relaxing max_pressure_drop_kPa constraint or adjusting plate geometry",
+                    }
+                )
 
         # Handle parameter sweep if requested
         if sweep_max_pressure_drop_kPa is not None and len(sweep_max_pressure_drop_kPa) > 0:
@@ -329,25 +337,29 @@ def size_plate_heat_exchanger(
 
                 # Extract key metrics for sweep summary
                 if "error" not in single_result:
-                    sweep_results.append({
-                        "max_dP_constraint_kPa": dP_limit,
-                        "plates": single_result["geometry"]["plates"],
-                        "area_available_m2": single_result["geometry"]["total_area_m2"],
-                        "area_required_m2": single_result["geometry"]["area_required_m2"],
-                        "area_margin_pct": single_result["geometry"]["area_margin_pct"],
-                        "U_W_m2K": single_result["thermal"]["U_W_m2K"],
-                        "dP_hot_kPa": single_result["hydraulic"]["pressure_drop_hot_kPa"],
-                        "dP_cold_kPa": single_result["hydraulic"]["pressure_drop_cold_kPa"],
-                        "velocity_hot_m_s": single_result["hydraulic"]["velocity_hot_m_s"],
-                        "velocity_cold_m_s": single_result["hydraulic"]["velocity_cold_m_s"],
-                        "Re_hot": single_result["thermal"]["Re_hot"],
-                        "Re_cold": single_result["thermal"]["Re_cold"],
-                    })
+                    sweep_results.append(
+                        {
+                            "max_dP_constraint_kPa": dP_limit,
+                            "plates": single_result["geometry"]["plates"],
+                            "area_available_m2": single_result["geometry"]["total_area_m2"],
+                            "area_required_m2": single_result["geometry"]["area_required_m2"],
+                            "area_margin_pct": single_result["geometry"]["area_margin_pct"],
+                            "U_W_m2K": single_result["thermal"]["U_W_m2K"],
+                            "dP_hot_kPa": single_result["hydraulic"]["pressure_drop_hot_kPa"],
+                            "dP_cold_kPa": single_result["hydraulic"]["pressure_drop_cold_kPa"],
+                            "velocity_hot_m_s": single_result["hydraulic"]["velocity_hot_m_s"],
+                            "velocity_cold_m_s": single_result["hydraulic"]["velocity_cold_m_s"],
+                            "Re_hot": single_result["thermal"]["Re_hot"],
+                            "Re_cold": single_result["thermal"]["Re_cold"],
+                        }
+                    )
                 else:
-                    sweep_results.append({
-                        "max_dP_constraint_kPa": dP_limit,
-                        "error": single_result["error"],
-                    })
+                    sweep_results.append(
+                        {
+                            "max_dP_constraint_kPa": dP_limit,
+                            "error": single_result["error"],
+                        }
+                    )
 
             # Also run without constraint to show minimum thermal requirement
             unconstrained_json = size_plate_heat_exchanger(
@@ -385,25 +397,31 @@ def size_plate_heat_exchanger(
             )
             unconstrained = json.loads(unconstrained_json)
 
-            return json.dumps({
-                "sweep_type": "max_pressure_drop_kPa",
-                "sweep_values": sorted(sweep_max_pressure_drop_kPa),
-                "results": sweep_results,
-                "unconstrained_minimum": {
-                    "plates": unconstrained.get("geometry", {}).get("plates"),
-                    "area_required_m2": unconstrained.get("geometry", {}).get("area_required_m2"),
-                    "U_W_m2K": unconstrained.get("thermal", {}).get("U_W_m2K"),
-                    "dP_hot_kPa": unconstrained.get("hydraulic", {}).get("pressure_drop_hot_kPa"),
-                    "dP_cold_kPa": unconstrained.get("hydraulic", {}).get("pressure_drop_cold_kPa"),
-                    "note": "Minimum plates for thermal duty (no dP constraint)"
-                } if "error" not in unconstrained else {"error": unconstrained["error"]},
-                "analysis_notes": [
-                    "Lower dP constraint -> more plates -> lower velocity -> lower U -> larger area required",
-                    "Higher dP constraint -> fewer plates -> higher velocity -> higher U -> smaller area required",
-                    "Q = U * A_required * LMTD is satisfied for all cases",
-                    "A_available may exceed A_required due to discrete plate counts"
-                ]
-            })
+            return json.dumps(
+                {
+                    "sweep_type": "max_pressure_drop_kPa",
+                    "sweep_values": sorted(sweep_max_pressure_drop_kPa),
+                    "results": sweep_results,
+                    "unconstrained_minimum": (
+                        {
+                            "plates": unconstrained.get("geometry", {}).get("plates"),
+                            "area_required_m2": unconstrained.get("geometry", {}).get("area_required_m2"),
+                            "U_W_m2K": unconstrained.get("thermal", {}).get("U_W_m2K"),
+                            "dP_hot_kPa": unconstrained.get("hydraulic", {}).get("pressure_drop_hot_kPa"),
+                            "dP_cold_kPa": unconstrained.get("hydraulic", {}).get("pressure_drop_cold_kPa"),
+                            "note": "Minimum plates for thermal duty (no dP constraint)",
+                        }
+                        if "error" not in unconstrained
+                        else {"error": unconstrained["error"]}
+                    ),
+                    "analysis_notes": [
+                        "Lower dP constraint -> more plates -> lower velocity -> lower U -> larger area required",
+                        "Higher dP constraint -> fewer plates -> higher velocity -> higher U -> smaller area required",
+                        "Q = U * A_required * LMTD is satisfied for all cases",
+                        "A_available may exceed A_required due to discrete plate counts",
+                    ],
+                }
+            )
 
         # Validate required inputs
         if hot_mass_flow_kg_s is None or hot_mass_flow_kg_s <= 0:
@@ -412,11 +430,9 @@ def size_plate_heat_exchanger(
             return json.dumps({"error": "cold_mass_flow_kg_s must be positive"})
 
         # Validate correlation
-        valid_correlations = ['Kumar', 'Martin_1999', 'Martin_VDI', 'Muley_Manglik']
+        valid_correlations = ["Kumar", "Martin_1999", "Martin_VDI", "Muley_Manglik"]
         if correlation not in valid_correlations:
-            return json.dumps({
-                "error": f"Invalid correlation: {correlation}. Valid options: {valid_correlations}"
-            })
+            return json.dumps({"error": f"Invalid correlation: {correlation}. Valid options: {valid_correlations}"})
 
         # Validate plate geometry
         if plate_amplitude_m is None or plate_amplitude_m <= 0:
@@ -435,15 +451,11 @@ def size_plate_heat_exchanger(
         if heat_duty_W is None:
             # Need all 4 temperatures to calculate duty
             if temps_count < 4:
-                return json.dumps({
-                    "error": "Either heat_duty_W or all four temperatures must be provided"
-                })
+                return json.dumps({"error": "Either heat_duty_W or all four temperatures must be provided"})
         else:
             # With duty provided, need at least 2 inlet temps (can calculate both outlets from Q = m*Cp*dT)
             if hot_inlet_temp_K is None or cold_inlet_temp_K is None:
-                return json.dumps({
-                    "error": "Both inlet temperatures required when heat_duty_W is provided"
-                })
+                return json.dumps({"error": "Both inlet temperatures required when heat_duty_W is provided"})
 
         # Get fluid properties
         hot_bulk_temp = (hot_inlet_temp_K + (hot_outlet_temp_K or hot_inlet_temp_K)) / 2
@@ -511,14 +523,15 @@ def size_plate_heat_exchanger(
             dT2 = hot_outlet_temp_K - cold_outlet_temp_K
 
         if dT1 <= 0 or dT2 <= 0:
-            return json.dumps({
-                "error": "Temperature crossover: LMTD undefined",
-                "details": {"dT1": dT1, "dT2": dT2}
-            })
+            return json.dumps({"error": "Temperature crossover: LMTD undefined", "details": {"dT1": dT1, "dT2": dT2}})
 
-        LMTD = ht_LMTD(Thi=hot_inlet_temp_K, Tho=hot_outlet_temp_K,
-                       Tci=cold_inlet_temp_K, Tco=cold_outlet_temp_K,
-                       counterflow=is_counterflow)
+        LMTD = ht_LMTD(
+            Thi=hot_inlet_temp_K,
+            Tho=hot_outlet_temp_K,
+            Tci=cold_inlet_temp_K,
+            Tco=cold_outlet_temp_K,
+            counterflow=is_counterflow,
+        )
 
         if LMTD < 0.5:
             logger.warning(f"Very small LMTD ({LMTD:.2f} K) - pinch point may be too tight")
@@ -545,8 +558,7 @@ def size_plate_heat_exchanger(
             plates_to_try = [n_plates]
         else:
             # Solver mode: try range of odd plate counts
-            plates_to_try = list(range(min_plates if min_plates % 2 == 1 else min_plates + 1,
-                                       max_plates + 1, 2))
+            plates_to_try = list(range(min_plates if min_plates % 2 == 1 else min_plates + 1, max_plates + 1, 2))
 
         best_result = None
         all_results = []
@@ -562,14 +574,14 @@ def size_plate_heat_exchanger(
                     length=plate_length_m,
                     d_port=port_diameter_m,
                     plates=n_pl,
-                    thickness=plate_thickness_m
+                    thickness=plate_thickness_m,
                 )
 
                 # Get geometry from class
                 D_h = phe.D_hydraulic
                 phi = phe.plate_enlargement_factor
                 A_channel = phe.A_channel_flow
-                A_plate = getattr(phe, 'A_plate_surface', plate_width_m * plate_length_m * phi)
+                A_plate = getattr(phe, "A_plate_surface", plate_width_m * plate_length_m * phi)
                 n_channels = phe.channels  # = plates - 1
                 channels_per_fluid = n_channels // 2
 
@@ -594,7 +606,7 @@ def size_plate_heat_exchanger(
                 warnings_list = []
                 paired_friction = None
 
-                if correlation == 'Kumar':
+                if correlation == "Kumar":
                     # Kumar correlation supports viscosity correction (mu/mu_wall)^0.17
                     # Estimate plate temperature as average of bulk temps
                     T_plate = (hot_bulk_temp + cold_bulk_temp) / 2
@@ -603,15 +615,21 @@ def size_plate_heat_exchanger(
                     T_wall_cold = (cold_bulk_temp + T_plate) / 2
 
                     # Get viscosity at wall temperature for correction
-                    hot_wall_props = json.loads(get_fluid_properties(hot_fluid, T_wall_hot, hot_fluid_pressure_Pa, strict=strict))
-                    cold_wall_props = json.loads(get_fluid_properties(cold_fluid, T_wall_cold, cold_fluid_pressure_Pa, strict=strict))
+                    hot_wall_props = json.loads(
+                        get_fluid_properties(hot_fluid, T_wall_hot, hot_fluid_pressure_Pa, strict=strict)
+                    )
+                    cold_wall_props = json.loads(
+                        get_fluid_properties(cold_fluid, T_wall_cold, cold_fluid_pressure_Pa, strict=strict)
+                    )
                     mu_wall_hot = hot_wall_props.get("dynamic_viscosity", mu_hot)
                     mu_wall_cold = cold_wall_props.get("dynamic_viscosity", mu_cold)
 
-                    Nu_hot = Nu_plate_Kumar(Re=Re_hot, Pr=Pr_hot, chevron_angle=chevron_angle_deg,
-                                            mu=mu_hot, mu_wall=mu_wall_hot)
-                    Nu_cold = Nu_plate_Kumar(Re=Re_cold, Pr=Pr_cold, chevron_angle=chevron_angle_deg,
-                                             mu=mu_cold, mu_wall=mu_wall_cold)
+                    Nu_hot = Nu_plate_Kumar(
+                        Re=Re_hot, Pr=Pr_hot, chevron_angle=chevron_angle_deg, mu=mu_hot, mu_wall=mu_wall_hot
+                    )
+                    Nu_cold = Nu_plate_Kumar(
+                        Re=Re_cold, Pr=Pr_cold, chevron_angle=chevron_angle_deg, mu=mu_cold, mu_wall=mu_wall_cold
+                    )
                     f_hot = friction_plate_Kumar(Re_hot, chevron_angle_deg)
                     f_cold = friction_plate_Kumar(Re_cold, chevron_angle_deg)
                     paired_friction = "friction_plate_Kumar"
@@ -619,25 +637,27 @@ def size_plate_heat_exchanger(
                     if chevron_angle_deg < 30 or chevron_angle_deg > 65:
                         warnings_list.append(f"Kumar valid for chevron 30-65°, got {chevron_angle_deg}°")
 
-                elif correlation == 'Martin_1999':
-                    Nu_hot = Nu_plate_Martin(Re=Re_hot, Pr=Pr_hot, chevron_angle=chevron_angle_deg, variant='1999')
-                    Nu_cold = Nu_plate_Martin(Re=Re_cold, Pr=Pr_cold, chevron_angle=chevron_angle_deg, variant='1999')
+                elif correlation == "Martin_1999":
+                    Nu_hot = Nu_plate_Martin(Re=Re_hot, Pr=Pr_hot, chevron_angle=chevron_angle_deg, variant="1999")
+                    Nu_cold = Nu_plate_Martin(Re=Re_cold, Pr=Pr_cold, chevron_angle=chevron_angle_deg, variant="1999")
                     f_hot = friction_plate_Martin_1999(Re_hot, chevron_angle_deg)
                     f_cold = friction_plate_Martin_1999(Re_cold, chevron_angle_deg)
                     paired_friction = "friction_plate_Martin_1999"
 
-                elif correlation == 'Martin_VDI':
-                    Nu_hot = Nu_plate_Martin(Re=Re_hot, Pr=Pr_hot, chevron_angle=chevron_angle_deg, variant='VDI')
-                    Nu_cold = Nu_plate_Martin(Re=Re_cold, Pr=Pr_cold, chevron_angle=chevron_angle_deg, variant='VDI')
+                elif correlation == "Martin_VDI":
+                    Nu_hot = Nu_plate_Martin(Re=Re_hot, Pr=Pr_hot, chevron_angle=chevron_angle_deg, variant="VDI")
+                    Nu_cold = Nu_plate_Martin(Re=Re_cold, Pr=Pr_cold, chevron_angle=chevron_angle_deg, variant="VDI")
                     f_hot = friction_plate_Martin_VDI(Re_hot, chevron_angle_deg)
                     f_cold = friction_plate_Martin_VDI(Re_cold, chevron_angle_deg)
                     paired_friction = "friction_plate_Martin_VDI"
 
-                elif correlation == 'Muley_Manglik':
-                    Nu_hot = Nu_plate_Muley_Manglik(Re=Re_hot, Pr=Pr_hot, chevron_angle=chevron_angle_deg,
-                                                    plate_enlargement_factor=phi)
-                    Nu_cold = Nu_plate_Muley_Manglik(Re=Re_cold, Pr=Pr_cold, chevron_angle=chevron_angle_deg,
-                                                     plate_enlargement_factor=phi)
+                elif correlation == "Muley_Manglik":
+                    Nu_hot = Nu_plate_Muley_Manglik(
+                        Re=Re_hot, Pr=Pr_hot, chevron_angle=chevron_angle_deg, plate_enlargement_factor=phi
+                    )
+                    Nu_cold = Nu_plate_Muley_Manglik(
+                        Re=Re_cold, Pr=Pr_cold, chevron_angle=chevron_angle_deg, plate_enlargement_factor=phi
+                    )
                     f_hot = friction_plate_Muley_Manglik(Re_hot, chevron_angle_deg, phi)
                     f_cold = friction_plate_Muley_Manglik(Re_cold, chevron_angle_deg, phi)
                     paired_friction = "friction_plate_Muley_Manglik"
@@ -651,7 +671,7 @@ def size_plate_heat_exchanger(
 
                 # Calculate overall U (based on plate surface area)
                 R_wall = plate_thickness_m / plate_conductivity_W_mK
-                R_total = 1/h_hot + fouling_factor_hot_m2K_W + R_wall + fouling_factor_cold_m2K_W + 1/h_cold
+                R_total = 1 / h_hot + fouling_factor_hot_m2K_W + R_wall + fouling_factor_cold_m2K_W + 1 / h_cold
                 U = 1 / R_total
 
                 # Calculate available area
@@ -731,7 +751,6 @@ def size_plate_heat_exchanger(
                         "LMTD_K": LMTD,
                         "effectiveness": effectiveness,
                         "NTU": NTU,
-
                         "geometry": {
                             "plates": n_pl,
                             "channels_total": n_channels,
@@ -754,7 +773,6 @@ def size_plate_heat_exchanger(
                             },
                             "chevron_angle_deg": chevron_angle_deg,
                         },
-
                         "thermal": {
                             "U_W_m2K": U,
                             "h_hot_W_m2K": h_hot,
@@ -770,7 +788,6 @@ def size_plate_heat_exchanger(
                             "fouling_hot_m2K_W": fouling_factor_hot_m2K_W,
                             "fouling_cold_m2K_W": fouling_factor_cold_m2K_W,
                         },
-
                         "hydraulic": {
                             "velocity_hot_m_s": v_hot,
                             "velocity_cold_m_s": v_cold,
@@ -790,7 +807,6 @@ def size_plate_heat_exchanger(
                                 "port_losses_kPa": dP_port_cold / 1000,
                             },
                         },
-
                         "temperatures": {
                             "hot_inlet_K": hot_inlet_temp_K,
                             "hot_inlet_C": hot_inlet_temp_K - 273.15,
@@ -801,12 +817,13 @@ def size_plate_heat_exchanger(
                             "cold_outlet_K": cold_outlet_temp_K,
                             "cold_outlet_C": cold_outlet_temp_K - 273.15,
                             # Terminal temperature differences (correct terminology)
-                            "terminal_temp_diff_min_K": min(hot_inlet_temp_K - cold_outlet_temp_K,
-                                                           hot_outlet_temp_K - cold_inlet_temp_K),
-                            "terminal_temp_diff_max_K": max(hot_inlet_temp_K - cold_outlet_temp_K,
-                                                           hot_outlet_temp_K - cold_inlet_temp_K),
+                            "terminal_temp_diff_min_K": min(
+                                hot_inlet_temp_K - cold_outlet_temp_K, hot_outlet_temp_K - cold_inlet_temp_K
+                            ),
+                            "terminal_temp_diff_max_K": max(
+                                hot_inlet_temp_K - cold_outlet_temp_K, hot_outlet_temp_K - cold_inlet_temp_K
+                            ),
                         },
-
                         "fluids": {
                             "hot": {
                                 "name": hot_fluid,
@@ -825,7 +842,6 @@ def size_plate_heat_exchanger(
                                 "specific_heat_J_kgK": cp_cold,
                             },
                         },
-
                         "configuration": {
                             "flow_arrangement": flow_arrangement,
                             "passes_hot": passes_hot,
@@ -850,22 +866,28 @@ def size_plate_heat_exchanger(
             return json.dumps(best_result)
         elif all_results:
             # No solution found that satisfies constraints
-            return json.dumps({
-                "error": "No plate count satisfies both thermal and hydraulic constraints",
-                "suggestion": "Try relaxing max_pressure_drop_kPa or adjusting plate geometry",
-                "evaluated_configurations": all_results[:10],  # Show first 10
-            })
+            return json.dumps(
+                {
+                    "error": "No plate count satisfies both thermal and hydraulic constraints",
+                    "suggestion": "Try relaxing max_pressure_drop_kPa or adjusting plate geometry",
+                    "evaluated_configurations": all_results[:10],  # Show first 10
+                }
+            )
         else:
-            return json.dumps({
-                "error": "Could not evaluate any plate configurations",
-                "suggestion": "Check plate geometry parameters and pass configuration"
-            })
+            return json.dumps(
+                {
+                    "error": "Could not evaluate any plate configurations",
+                    "suggestion": "Check plate geometry parameters and pass configuration",
+                }
+            )
 
     except ImportError as e:
-        return json.dumps({
-            "error": f"Required library import failed: {e}",
-            "suggestion": "Install with: pip install ht>=1.2.0 fluids>=1.0.0"
-        })
+        return json.dumps(
+            {
+                "error": f"Required library import failed: {e}",
+                "suggestion": "Install with: pip install ht>=1.2.0 fluids>=1.0.0",
+            }
+        )
     except Exception as e:
         logger.error(f"Error in size_plate_heat_exchanger: {e}", exc_info=True)
         return json.dumps({"error": str(e)})

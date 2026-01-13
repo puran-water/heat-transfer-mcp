@@ -1,4 +1,5 @@
 """Test unit conversion functionality."""
+
 import pytest
 from utils import unit_converter
 
@@ -61,7 +62,7 @@ class TestUnitConverter:
         # Test temperature conversion with string input
         result = unit_converter.parse_and_convert("95 degF", "K", "temperature")
         assert abs(result - 308.15) < 0.1
-        
+
         # Test invalid unit handling
         with pytest.raises(Exception):
             unit_converter.parse_and_convert("invalid unit", "K", "temperature")

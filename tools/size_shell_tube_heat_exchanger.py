@@ -156,18 +156,22 @@ def size_shell_tube_heat_exchanger(
         if not HT_AVAILABLE:
             if strict:
                 return json.dumps({"error": "ht library required with strict=True"})
-            return json.dumps({
-                "error": "ht library not available for shell-tube sizing",
-                "suggestion": "Install with: pip install ht>=1.2.0"
-            })
+            return json.dumps(
+                {
+                    "error": "ht library not available for shell-tube sizing",
+                    "suggestion": "Install with: pip install ht>=1.2.0",
+                }
+            )
 
         if not FLUIDS_AVAILABLE:
             if strict:
                 return json.dumps({"error": "fluids library required with strict=True"})
-            return json.dumps({
-                "error": "fluids library not available for shell-tube sizing",
-                "suggestion": "Install with: pip install fluids>=1.0.0"
-            })
+            return json.dumps(
+                {
+                    "error": "fluids library not available for shell-tube sizing",
+                    "suggestion": "Install with: pip install fluids>=1.0.0",
+                }
+            )
 
         # Handle automatic optimization if requested
         if auto_optimize:
@@ -229,27 +233,34 @@ def size_shell_tube_heat_exchanger(
                                 if optimize_for == "area":
                                     score = result["geometry"]["total_area_m2"]
                                 elif optimize_for == "dP":
-                                    score = result["hydraulic"]["pressure_drop_tube_kPa"] + result["hydraulic"]["pressure_drop_shell_kPa"]
+                                    score = (
+                                        result["hydraulic"]["pressure_drop_tube_kPa"]
+                                        + result["hydraulic"]["pressure_drop_shell_kPa"]
+                                    )
                                 else:  # "cost" - approximate based on area and tube count
                                     score = result["geometry"]["total_area_m2"] * (1 + 0.01 * result["geometry"]["n_tubes"])
 
-                                all_candidates.append({
-                                    "config": {
-                                        "n_tube_passes": passes,
-                                        "tube_length_m": length,
-                                        "tube_layout_angle": angle,
-                                    },
-                                    "score": score,
-                                    "n_tubes": result["geometry"]["n_tubes"],
-                                    "total_area_m2": result["geometry"]["total_area_m2"],
-                                    "U_W_m2K": result["thermal"]["U_W_m2K"],
-                                    "Re_tube": result["thermal"]["Re_tube"],
-                                    "dP_tube_kPa": result["hydraulic"]["pressure_drop_tube_kPa"],
-                                    "dP_shell_kPa": result["hydraulic"]["pressure_drop_shell_kPa"],
-                                    "full_result": result,
-                                })
+                                all_candidates.append(
+                                    {
+                                        "config": {
+                                            "n_tube_passes": passes,
+                                            "tube_length_m": length,
+                                            "tube_layout_angle": angle,
+                                        },
+                                        "score": score,
+                                        "n_tubes": result["geometry"]["n_tubes"],
+                                        "total_area_m2": result["geometry"]["total_area_m2"],
+                                        "U_W_m2K": result["thermal"]["U_W_m2K"],
+                                        "Re_tube": result["thermal"]["Re_tube"],
+                                        "dP_tube_kPa": result["hydraulic"]["pressure_drop_tube_kPa"],
+                                        "dP_shell_kPa": result["hydraulic"]["pressure_drop_shell_kPa"],
+                                        "full_result": result,
+                                    }
+                                )
                         except Exception as e:
-                            logger.debug(f"Optimization candidate failed: passes={passes}, length={length}, angle={angle}: {e}")
+                            logger.debug(
+                                f"Optimization candidate failed: passes={passes}, length={length}, angle={angle}: {e}"
+                            )
                             continue
 
             if all_candidates:
@@ -257,41 +268,45 @@ def size_shell_tube_heat_exchanger(
                 all_candidates.sort(key=lambda x: x["score"])
                 best = all_candidates[0]
 
-                return json.dumps({
-                    "optimization_mode": True,
-                    "optimize_for": optimize_for,
-                    "best_configuration": best["config"],
-                    "best_result": best["full_result"],
-                    "candidates_evaluated": len(all_candidates),
-                    "top_5_candidates": [
-                        {
-                            "config": c["config"],
-                            "score": c["score"],
-                            "n_tubes": c["n_tubes"],
-                            "area_m2": c["total_area_m2"],
-                            "U_W_m2K": c["U_W_m2K"],
-                            "Re_tube": c["Re_tube"],
-                            "dP_tube_kPa": c["dP_tube_kPa"],
-                            "dP_shell_kPa": c["dP_shell_kPa"],
-                        }
-                        for c in all_candidates[:5]
-                    ],
-                    "search_space": {
-                        "n_tube_passes": search_passes,
-                        "tube_length_m": search_lengths,
-                        "tube_layout_angle": search_angles,
+                return json.dumps(
+                    {
+                        "optimization_mode": True,
+                        "optimize_for": optimize_for,
+                        "best_configuration": best["config"],
+                        "best_result": best["full_result"],
+                        "candidates_evaluated": len(all_candidates),
+                        "top_5_candidates": [
+                            {
+                                "config": c["config"],
+                                "score": c["score"],
+                                "n_tubes": c["n_tubes"],
+                                "area_m2": c["total_area_m2"],
+                                "U_W_m2K": c["U_W_m2K"],
+                                "Re_tube": c["Re_tube"],
+                                "dP_tube_kPa": c["dP_tube_kPa"],
+                                "dP_shell_kPa": c["dP_shell_kPa"],
+                            }
+                            for c in all_candidates[:5]
+                        ],
+                        "search_space": {
+                            "n_tube_passes": search_passes,
+                            "tube_length_m": search_lengths,
+                            "tube_layout_angle": search_angles,
+                        },
                     }
-                })
+                )
             else:
-                return json.dumps({
-                    "error": "No feasible configuration found in optimization search",
-                    "search_space": {
-                        "n_tube_passes": search_passes,
-                        "tube_length_m": search_lengths,
-                        "tube_layout_angle": search_angles,
-                    },
-                    "suggestion": "Try relaxing constraints (max_pressure_drop, min_Re_tube) or expanding search ranges"
-                })
+                return json.dumps(
+                    {
+                        "error": "No feasible configuration found in optimization search",
+                        "search_space": {
+                            "n_tube_passes": search_passes,
+                            "tube_length_m": search_lengths,
+                            "tube_layout_angle": search_angles,
+                        },
+                        "suggestion": "Try relaxing constraints (max_pressure_drop, min_Re_tube) or expanding search ranges",
+                    }
+                )
 
         # Handle parameter sweep if requested
         if sweep_n_tube_passes is not None and len(sweep_n_tube_passes) > 0:
@@ -342,34 +357,40 @@ def size_shell_tube_heat_exchanger(
                 single_result = json.loads(single_result_json)
 
                 if "error" not in single_result:
-                    sweep_results.append({
-                        "n_tube_passes": passes,
-                        "n_tubes": single_result["geometry"]["n_tubes"],
-                        "total_area_m2": single_result["geometry"]["total_area_m2"],
-                        "U_W_m2K": single_result["thermal"]["U_W_m2K"],
-                        "F_correction": single_result["F_correction"],
-                        "dP_tube_kPa": single_result["hydraulic"]["pressure_drop_tube_kPa"],
-                        "dP_shell_kPa": single_result["hydraulic"]["pressure_drop_shell_kPa"],
-                        "Re_tube": single_result["thermal"]["Re_tube"],
-                        "Re_shell": single_result["thermal"]["Re_shell"],
-                    })
+                    sweep_results.append(
+                        {
+                            "n_tube_passes": passes,
+                            "n_tubes": single_result["geometry"]["n_tubes"],
+                            "total_area_m2": single_result["geometry"]["total_area_m2"],
+                            "U_W_m2K": single_result["thermal"]["U_W_m2K"],
+                            "F_correction": single_result["F_correction"],
+                            "dP_tube_kPa": single_result["hydraulic"]["pressure_drop_tube_kPa"],
+                            "dP_shell_kPa": single_result["hydraulic"]["pressure_drop_shell_kPa"],
+                            "Re_tube": single_result["thermal"]["Re_tube"],
+                            "Re_shell": single_result["thermal"]["Re_shell"],
+                        }
+                    )
                 else:
-                    sweep_results.append({
-                        "n_tube_passes": passes,
-                        "error": single_result["error"],
-                    })
+                    sweep_results.append(
+                        {
+                            "n_tube_passes": passes,
+                            "error": single_result["error"],
+                        }
+                    )
 
-            return json.dumps({
-                "sweep_type": "n_tube_passes",
-                "sweep_values": sorted(sweep_n_tube_passes),
-                "results": sweep_results,
-                "analysis_notes": [
-                    "More tube passes -> higher tube velocity -> higher h_tube -> higher U",
-                    "More tube passes -> higher tube-side dP (proportional to passes)",
-                    "F correction factor decreases with more passes for given NTU",
-                    "Optimal passes balance U improvement vs dP increase",
-                ]
-            })
+            return json.dumps(
+                {
+                    "sweep_type": "n_tube_passes",
+                    "sweep_values": sorted(sweep_n_tube_passes),
+                    "results": sweep_results,
+                    "analysis_notes": [
+                        "More tube passes -> higher tube velocity -> higher h_tube -> higher U",
+                        "More tube passes -> higher tube-side dP (proportional to passes)",
+                        "F correction factor decreases with more passes for given NTU",
+                        "Optimal passes balance U improvement vs dP increase",
+                    ],
+                }
+            )
 
         # Validate required inputs
         if hot_mass_flow_kg_s is None or hot_mass_flow_kg_s <= 0:
@@ -383,28 +404,24 @@ def size_shell_tube_heat_exchanger(
 
         if heat_duty_W is None:
             if temps_count < 4:
-                return json.dumps({
-                    "error": "Either heat_duty_W or all four temperatures must be provided"
-                })
+                return json.dumps({"error": "Either heat_duty_W or all four temperatures must be provided"})
         else:
             if hot_inlet_temp_K is None or cold_inlet_temp_K is None:
-                return json.dumps({
-                    "error": "Both inlet temperatures required when heat_duty_W is provided"
-                })
+                return json.dumps({"error": "Both inlet temperatures required when heat_duty_W is provided"})
 
         # Validate tube geometry
         if tube_pitch_m <= tube_outer_diameter_m:
-            return json.dumps({
-                "error": f"tube_pitch_m ({tube_pitch_m}) must be > tube_outer_diameter_m ({tube_outer_diameter_m})"
-            })
+            return json.dumps(
+                {"error": f"tube_pitch_m ({tube_pitch_m}) must be > tube_outer_diameter_m ({tube_outer_diameter_m})"}
+            )
         if tube_inner_diameter_m >= tube_outer_diameter_m:
-            return json.dumps({
-                "error": f"tube_inner_diameter_m ({tube_inner_diameter_m}) must be < tube_outer_diameter_m ({tube_outer_diameter_m})"
-            })
+            return json.dumps(
+                {
+                    "error": f"tube_inner_diameter_m ({tube_inner_diameter_m}) must be < tube_outer_diameter_m ({tube_outer_diameter_m})"
+                }
+            )
         if tube_layout_angle not in [30, 45, 60, 90]:
-            return json.dumps({
-                "error": f"tube_layout_angle must be 30, 45, 60, or 90 degrees, got {tube_layout_angle}"
-            })
+            return json.dumps({"error": f"tube_layout_angle must be 30, 45, 60, or 90 degrees, got {tube_layout_angle}"})
 
         # Assign fluids to tube/shell sides
         if tube_side_fluid.lower() == "cold":
@@ -486,29 +503,32 @@ def size_shell_tube_heat_exchanger(
         dT2 = hot_outlet_temp_K - cold_inlet_temp_K
 
         if dT1 <= 0 or dT2 <= 0:
-            return json.dumps({
-                "error": "Temperature crossover: LMTD undefined",
-                "details": {
-                    "dT1_hot_in_minus_cold_out": dT1,
-                    "dT2_hot_out_minus_cold_in": dT2,
-                    "hint": "Hot fluid must be hotter than cold fluid at both ends"
+            return json.dumps(
+                {
+                    "error": "Temperature crossover: LMTD undefined",
+                    "details": {
+                        "dT1_hot_in_minus_cold_out": dT1,
+                        "dT2_hot_out_minus_cold_in": dT2,
+                        "hint": "Hot fluid must be hotter than cold fluid at both ends",
+                    },
                 }
-            })
+            )
 
-        LMTD = ht_LMTD(Thi=hot_inlet_temp_K, Tho=hot_outlet_temp_K,
-                       Tci=cold_inlet_temp_K, Tco=cold_outlet_temp_K,
-                       counterflow=True)
+        LMTD = ht_LMTD(
+            Thi=hot_inlet_temp_K, Tho=hot_outlet_temp_K, Tci=cold_inlet_temp_K, Tco=cold_outlet_temp_K, counterflow=True
+        )
 
         # Calculate LMTD correction factor for multi-pass
         F_correction = 1.0
         try:
             from ht.hx import F_LMTD_Fakheri
+
             F_correction = F_LMTD_Fakheri(
                 Tci=cold_inlet_temp_K,
                 Tco=cold_outlet_temp_K,
                 Thi=hot_inlet_temp_K,
                 Tho=hot_outlet_temp_K,
-                shells=n_shell_passes
+                shells=n_shell_passes,
             )
             if F_correction < 0.75:
                 logger.warning(f"Low F correction ({F_correction:.3f}) suggests temperature approach is tight")
@@ -538,17 +558,21 @@ def size_shell_tube_heat_exchanger(
 
             if max_bundle_diameter > 2 * tube_pitch_m:  # Sanity check
                 try:
-                    max_tubes_from_shell = int(Ntubes_Phadkeb(
-                        DBundle=max_bundle_diameter,
-                        Do=tube_outer_diameter_m,
-                        pitch=tube_pitch_m,
-                        Ntp=n_tube_passes,
-                        angle=tube_layout_angle
-                    ))
+                    max_tubes_from_shell = int(
+                        Ntubes_Phadkeb(
+                            DBundle=max_bundle_diameter,
+                            Do=tube_outer_diameter_m,
+                            pitch=tube_pitch_m,
+                            Ntp=n_tube_passes,
+                            angle=tube_layout_angle,
+                        )
+                    )
                     # Constrain max_tubes to what fits in the shell
                     if max_tubes_from_shell < max_tubes:
-                        logger.info(f"Shell ID {shell_inner_diameter_m*1000:.0f}mm constrains "
-                                    f"max tubes to {max_tubes_from_shell} (was {max_tubes})")
+                        logger.info(
+                            f"Shell ID {shell_inner_diameter_m*1000:.0f}mm constrains "
+                            f"max tubes to {max_tubes_from_shell} (was {max_tubes})"
+                        )
                         max_tubes = max_tubes_from_shell
                 except Exception as e:
                     logger.warning(f"Ntubes_Phadkeb failed for shell constraint: {e}")
@@ -595,6 +619,7 @@ def size_shell_tube_heat_exchanger(
                 else:
                     # Force specific correlation - need friction factor first
                     from ht.conv_internal import turbulent_Gnielinski, turbulent_Dittus_Boelter
+
                     fd = friction_factor(Re=Re_tube, eD=eD_tube)
                     if tube_side_method == "Gnielinski":
                         Nu_tube = turbulent_Gnielinski(Re_tube, Pr_tube, fd=fd)
@@ -605,11 +630,7 @@ def size_shell_tube_heat_exchanger(
 
                 # Estimate shell diameter from tube count using ht library
                 D_bundle = DBundle_for_Ntubes_Phadkeb(
-                    Ntubes=n_tubes,
-                    Do=tube_outer_diameter_m,
-                    pitch=tube_pitch_m,
-                    Ntp=n_tube_passes,
-                    angle=tube_layout_angle
+                    Ntubes=n_tubes, Do=tube_outer_diameter_m, pitch=tube_pitch_m, Ntp=n_tube_passes, angle=tube_layout_angle
                 )
 
                 # Shell diameter = bundle + clearance (typical 10-25mm for pull-through)
@@ -634,9 +655,13 @@ def size_shell_tube_heat_exchanger(
 
                 # Shell-side equivalent diameter
                 if tube_layout_angle in [30, 60]:
-                    De_shell = (4.0 * ((math.sqrt(3)/4.0)*tube_pitch_m**2 - (math.pi/8.0)*tube_outer_diameter_m**2)) / ((math.pi/2.0)*tube_outer_diameter_m)
+                    De_shell = (
+                        4.0 * ((math.sqrt(3) / 4.0) * tube_pitch_m**2 - (math.pi / 8.0) * tube_outer_diameter_m**2)
+                    ) / ((math.pi / 2.0) * tube_outer_diameter_m)
                 else:
-                    De_shell = (4.0 * (tube_pitch_m**2 - (math.pi/4.0)*tube_outer_diameter_m**2)) / (math.pi*tube_outer_diameter_m)
+                    De_shell = (4.0 * (tube_pitch_m**2 - (math.pi / 4.0) * tube_outer_diameter_m**2)) / (
+                        math.pi * tube_outer_diameter_m
+                    )
 
                 # Shell-side mass velocity
                 Gs_shell = shell_flow / A_shell
@@ -646,22 +671,22 @@ def size_shell_tube_heat_exchanger(
                 tube_rows = max(5, int(math.sqrt(n_tubes)))
                 if shell_side_method == "Zukauskas":
                     Nu_shell = Nu_Zukauskas_Bejan(
-                        Re=Re_shell,
-                        Pr=Pr_shell,
-                        tube_rows=tube_rows,
-                        pitch_parallel=tube_pitch_m,
-                        pitch_normal=tube_pitch_m
+                        Re=Re_shell, Pr=Pr_shell, tube_rows=tube_rows, pitch_parallel=tube_pitch_m, pitch_normal=tube_pitch_m
                     )
                 else:  # Kern - standard textbook correlation (no ht equivalent)
                     # Kern's method: Nu = 0.36 * Re^0.55 * Pr^(1/3) * (mu/mu_w)^0.14
                     # Wall viscosity correction omitted as approximation
-                    Nu_shell = 0.36 * Re_shell**0.55 * Pr_shell**(1/3)
+                    Nu_shell = 0.36 * Re_shell**0.55 * Pr_shell ** (1 / 3)
 
                 h_shell = Nu_shell * k_shell / De_shell
 
                 # Overall U (referenced to tube OD)
                 R_tube_inner = 1 / h_tube * (tube_outer_diameter_m / tube_inner_diameter_m)
-                R_wall = tube_outer_diameter_m * math.log(tube_outer_diameter_m / tube_inner_diameter_m) / (2 * tube_material_conductivity_W_mK)
+                R_wall = (
+                    tube_outer_diameter_m
+                    * math.log(tube_outer_diameter_m / tube_inner_diameter_m)
+                    / (2 * tube_material_conductivity_W_mK)
+                )
                 R_shell = 1 / h_shell
                 R_fouling_tube = fouling_factor_tube_m2K_W * (tube_outer_diameter_m / tube_inner_diameter_m)
                 R_fouling_shell = fouling_factor_shell_m2K_W
@@ -684,7 +709,7 @@ def size_shell_tube_heat_exchanger(
                     mu=mu_tube,
                     D=tube_inner_diameter_m,
                     roughness=tube_roughness_m,
-                    L=tube_length_m * n_tube_passes
+                    L=tube_length_m * n_tube_passes,
                 )
                 # Add entrance/exit losses (~1.5 velocity heads per pass)
                 dP_tube += 1.5 * n_tube_passes * rho_tube * v_tube**2 / 2
@@ -699,7 +724,7 @@ def size_shell_tube_heat_exchanger(
                         SL=tube_pitch_m,  # Longitudinal pitch
                         D=tube_outer_diameter_m,
                         rho=rho_shell,
-                        Vmax=v_shell
+                        Vmax=v_shell,
                     )
                 else:  # Kern method
                     # Use dP_Kern to match Kern Nusselt correlation
@@ -711,7 +736,7 @@ def size_shell_tube_heat_exchanger(
                         LSpacing=B,
                         pitch=tube_pitch_m,
                         Do=tube_outer_diameter_m,
-                        NBaffles=N_baffles
+                        NBaffles=N_baffles,
                     )
 
                 # Check constraints
@@ -765,7 +790,6 @@ def size_shell_tube_heat_exchanger(
                         "F_correction": F_correction,
                         "effectiveness": effectiveness,
                         "NTU": NTU,
-
                         "geometry": {
                             "type": "shell_tube",
                             "n_tubes": n_tubes,
@@ -788,9 +812,8 @@ def size_shell_tube_heat_exchanger(
                                 "outer_diameter_m": tube_outer_diameter_m,
                                 "inner_diameter_m": tube_inner_diameter_m,
                                 "wall_thickness_m": tube_wall_thickness,
-                            }
+                            },
                         },
-
                         "thermal": {
                             "U_W_m2K": U,
                             "h_tube_W_m2K": h_tube,
@@ -807,7 +830,6 @@ def size_shell_tube_heat_exchanger(
                             "fouling_tube_m2K_W": fouling_factor_tube_m2K_W,
                             "fouling_shell_m2K_W": fouling_factor_shell_m2K_W,
                         },
-
                         "hydraulic": {
                             "velocity_tube_m_s": v_tube,
                             "velocity_shell_m_s": v_shell,
@@ -820,7 +842,6 @@ def size_shell_tube_heat_exchanger(
                             "shell_cross_flow_area_m2": A_shell,
                             "equivalent_diameter_shell_m": De_shell,
                         },
-
                         "temperatures": {
                             "hot_inlet_K": hot_inlet_temp_K,
                             "hot_inlet_C": hot_inlet_temp_K - 273.15,
@@ -833,14 +854,12 @@ def size_shell_tube_heat_exchanger(
                             "terminal_temp_diff_min_K": min(dT1, dT2),
                             "terminal_temp_diff_max_K": max(dT1, dT2),
                         },
-
                         "configuration": {
                             "n_tube_passes": n_tube_passes,
                             "n_shell_passes": n_shell_passes,
                             "tube_side_fluid": tube_side_fluid,
                             "flow_arrangement": f"{n_shell_passes}-{n_tube_passes} (shell-tube passes)",
                         },
-
                         "fluids": {
                             "tube_side": {
                                 "name": tube_fluid,
@@ -859,13 +878,17 @@ def size_shell_tube_heat_exchanger(
                                 "specific_heat_J_kgK": cp_shell,
                             },
                         },
-
                         "heat_balance_verification": {
                             "Q_from_LMTD_kW": U * A_available * LMTD * F_correction / 1000,
                             "Q_from_hot_side_kW": hot_mass_flow_kg_s * cp_hot * (hot_inlet_temp_K - hot_outlet_temp_K) / 1000,
-                            "Q_from_cold_side_kW": cold_mass_flow_kg_s * cp_cold * (cold_outlet_temp_K - cold_inlet_temp_K) / 1000,
-                            "balance_satisfied": abs(heat_duty_W - U * A_required * LMTD * F_correction) / max(abs(heat_duty_W), 1) < 0.05,
-                        }
+                            "Q_from_cold_side_kW": cold_mass_flow_kg_s
+                            * cp_cold
+                            * (cold_outlet_temp_K - cold_inlet_temp_K)
+                            / 1000,
+                            "balance_satisfied": abs(heat_duty_W - U * A_required * LMTD * F_correction)
+                            / max(abs(heat_duty_W), 1)
+                            < 0.05,
+                        },
                     }
 
             except Exception as calc_error:
@@ -881,34 +904,42 @@ def size_shell_tube_heat_exchanger(
             thermal_ok = [r for r in all_results if r["thermal_satisfied"]]
             if thermal_ok:
                 closest = min(thermal_ok, key=lambda r: r["dP_tube_kPa"] + r["dP_shell_kPa"])
-                return json.dumps({
-                    "error": "No configuration satisfies both thermal AND hydraulic constraints",
-                    "closest_thermal_solution": closest,
-                    "suggestion": "Try increasing max_pressure_drop_*_kPa or max_velocity_*_m_s",
-                    "alternatives": [
-                        "Increase tube length to reduce velocity",
-                        "Use more tube passes to improve h_tube",
-                        "Use larger shell diameter to reduce shell-side velocity"
-                    ]
-                })
+                return json.dumps(
+                    {
+                        "error": "No configuration satisfies both thermal AND hydraulic constraints",
+                        "closest_thermal_solution": closest,
+                        "suggestion": "Try increasing max_pressure_drop_*_kPa or max_velocity_*_m_s",
+                        "alternatives": [
+                            "Increase tube length to reduce velocity",
+                            "Use more tube passes to improve h_tube",
+                            "Use larger shell diameter to reduce shell-side velocity",
+                        ],
+                    }
+                )
             else:
                 closest = min(all_results, key=lambda r: r["area_required_m2"] - r["area_available_m2"])
-                return json.dumps({
-                    "error": "No configuration satisfies thermal requirement within tube count range",
-                    "closest_solution": closest,
-                    "suggestion": "Try increasing max_tubes or tube_length_m",
-                })
+                return json.dumps(
+                    {
+                        "error": "No configuration satisfies thermal requirement within tube count range",
+                        "closest_solution": closest,
+                        "suggestion": "Try increasing max_tubes or tube_length_m",
+                    }
+                )
         else:
-            return json.dumps({
-                "error": "Could not evaluate any tube configurations",
-                "suggestion": "Check tube geometry parameters and pass configuration"
-            })
+            return json.dumps(
+                {
+                    "error": "Could not evaluate any tube configurations",
+                    "suggestion": "Check tube geometry parameters and pass configuration",
+                }
+            )
 
     except ImportError as e:
-        return json.dumps({
-            "error": f"Required library import failed: {e}",
-            "suggestion": "Install with: pip install ht>=1.2.0 fluids>=1.0.0"
-        })
+        return json.dumps(
+            {
+                "error": f"Required library import failed: {e}",
+                "suggestion": "Install with: pip install ht>=1.2.0 fluids>=1.0.0",
+            }
+        )
     except Exception as e:
         logger.error(f"Error in size_shell_tube_heat_exchanger: {e}", exc_info=True)
         return json.dumps({"error": str(e)})

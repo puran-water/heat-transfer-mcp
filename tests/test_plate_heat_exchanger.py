@@ -1,4 +1,5 @@
 """Tests for plate heat exchanger sizing and pressure drop tools."""
+
 import json
 import pytest
 import math
@@ -243,8 +244,9 @@ class TestPlateSizing:
         # Area should be internally consistent
         # A_heat_transfer = (plates - 2) * A_plate_surface
         expected_area = (geometry["plates"] - 2) * geometry["area_per_plate_m2"]
-        assert math.isclose(geometry["total_area_m2"], expected_area, rel_tol=0.01), \
-            f"Area inconsistency: total={geometry['total_area_m2']}, expected={expected_area}"
+        assert math.isclose(
+            geometry["total_area_m2"], expected_area, rel_tol=0.01
+        ), f"Area inconsistency: total={geometry['total_area_m2']}, expected={expected_area}"
 
         # LMTD should be ~18-19 K for this case
         lmtd = result["LMTD_K"]
@@ -307,11 +309,14 @@ class TestPlateSizing:
 class TestCorrelationPairing:
     """Test that Nu and friction correlations are properly paired."""
 
-    @pytest.mark.parametrize("correlation,expected_friction", [
-        ("Kumar", "friction_plate_Kumar"),
-        ("Martin_1999", "friction_plate_Martin_1999"),
-        ("Martin_VDI", "friction_plate_Martin_VDI"),
-    ])
+    @pytest.mark.parametrize(
+        "correlation,expected_friction",
+        [
+            ("Kumar", "friction_plate_Kumar"),
+            ("Martin_1999", "friction_plate_Martin_1999"),
+            ("Martin_VDI", "friction_plate_Martin_VDI"),
+        ],
+    )
     def test_correlation_pairing(self, correlation, expected_friction):
         """Test that each Nu correlation is paired with correct friction correlation."""
         result_json = calculate_convection_coefficient(

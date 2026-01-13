@@ -11,123 +11,123 @@ on:
 jobs:
   validate-tools:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    
+
     - name: Validate all tools load correctly
       run: |
-        python -c "
-import sys
-import importlib
-import traceback
-from pathlib import Path
+        python << 'EOF'
+        import sys
+        import importlib
+        import traceback
+        from pathlib import Path
 
-tools_dir = Path('tools')
-failed = []
+        tools_dir = Path('tools')
+        failed = []
 
-for tool_file in tools_dir.glob('*.py'):
-    if tool_file.name == '__init__.py':
-        continue
-    
-    module_name = f'tools.{tool_file.stem}'
-    try:
-        importlib.import_module(module_name)
-        print(f'✓ {module_name} loaded successfully')
-    except Exception as e:
-        failed.append((module_name, str(e)))
-        print(f'✗ {module_name} failed to load: {e}')
-        traceback.print_exc()
+        for tool_file in tools_dir.glob('*.py'):
+            if tool_file.name == '__init__.py':
+                continue
 
-if failed:
-    print(f'\n{len(failed)} tools failed to load')
-    sys.exit(1)
-else:
-    print(f'\nAll tools loaded successfully!')
-"
-    
+            module_name = f'tools.{tool_file.stem}'
+            try:
+                importlib.import_module(module_name)
+                print(f'✓ {module_name} loaded successfully')
+            except Exception as e:
+                failed.append((module_name, str(e)))
+                print(f'✗ {module_name} failed to load: {e}')
+                traceback.print_exc()
+
+        if failed:
+            print(f'\n{len(failed)} tools failed to load')
+            sys.exit(1)
+        else:
+            print(f'\nAll tools loaded successfully!')
+        EOF
+
     - name: Test validation system
       run: |
-        python -c "
-from utils.validation import (
-    require_positive,
-    require_non_negative,
-    validate_lat_lon,
-    ValidationError
-)
+        python << 'EOF'
+        from utils.validation import (
+            require_positive,
+            require_non_negative,
+            validate_lat_lon,
+            ValidationError
+        )
 
-# Test validation functions
-try:
-    require_positive(-1, 'test_value')
-    print('✗ Should have raised error for negative value')
-except ValidationError:
-    print('✓ Correctly rejected negative value')
+        # Test validation functions
+        try:
+            require_positive(-1, 'test_value')
+            print('✗ Should have raised error for negative value')
+        except ValidationError:
+            print('✓ Correctly rejected negative value')
 
-try:
-    validate_lat_lon(91, 0)
-    print('✗ Should have raised error for invalid latitude')
-except ValidationError:
-    print('✓ Correctly rejected invalid latitude')
-    
-print('Validation system working correctly!')
-"
-    
+        try:
+            validate_lat_lon(91, 0)
+            print('✗ Should have raised error for invalid latitude')
+        except ValidationError:
+            print('✓ Correctly rejected invalid latitude')
+
+        print('Validation system working correctly!')
+        EOF
+
     - name: Test material properties
       run: |
-        python -c "
-from tools.material_properties import get_material_properties
-import json
+        python << 'EOF'
+        from tools.material_properties import get_material_properties
+        import json
 
-# Test some common materials
-materials = ['steel', 'concrete', 'glass wool', 'water']
+        # Test some common materials
+        materials = ['steel', 'concrete', 'glass wool', 'water']
 
-for material in materials:
-    try:
-        props_json = get_material_properties(material)
-        props = json.loads(props_json)
-        if 'error' not in props:
-            k = props.get('thermal_conductivity_k', 'N/A')
-            print(f'✓ {material}: k={k} W/m-K')
-        else:
-            print(f'✗ {material}: {props[\"error\"]}')
-    except Exception as e:
-        print(f'✗ {material}: {e}')
-        
-print('Material properties system tested!')
-"
-    
+        for material in materials:
+            try:
+                props_json = get_material_properties(material)
+                props = json.loads(props_json)
+                if 'error' not in props:
+                    k = props.get('thermal_conductivity_k', 'N/A')
+                    print(f'✓ {material}: k={k} W/m-K')
+                else:
+                    print(f'✗ {material}: {props["error"]}')
+            except Exception as e:
+                print(f'✗ {material}: {e}')
+
+        print('Material properties system tested!')
+        EOF
+
     - name: Test fluid properties
       run: |
-        python -c "
-from tools.fluid_properties import get_fluid_properties
-import json
+        python << 'EOF'
+        from tools.fluid_properties import get_fluid_properties
+        import json
 
-# Test water properties at different temperatures
-temps = [273.15, 298.15, 373.15]  # 0°C, 25°C, 100°C
-        
-for T in temps:
-    props_json = get_fluid_properties('water', T)
-    props = json.loads(props_json)
-    if 'error' not in props:
-        rho = props.get('density', 'N/A')
-        mu = props.get('dynamic_viscosity', 'N/A')
-        print(f'Water at {T-273.15:.0f}°C: ρ={rho} kg/m³')
-    else:
-        print(f'✗ Water at {T-273.15:.0f}°C: {props[\"error\"]}')
-    
-print('Fluid properties system tested!')
-"
-    
+        # Test water properties at different temperatures
+        temps = [273.15, 298.15, 373.15]  # 0°C, 25°C, 100°C
+
+        for T in temps:
+            props_json = get_fluid_properties('water', T)
+            props = json.loads(props_json)
+            if 'error' not in props:
+                rho = props.get('density', 'N/A')
+                mu = props.get('dynamic_viscosity', 'N/A')
+                print(f'Water at {T-273.15:.0f}°C: ρ={rho} kg/m³')
+            else:
+                print(f'✗ Water at {T-273.15:.0f}°C: {props["error"]}')
+
+        print('Fluid properties system tested!')
+        EOF
+
     - name: Run pytest tests
       run: |
         pytest tests/ -v --tb=short || true

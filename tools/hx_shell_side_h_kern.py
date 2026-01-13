@@ -20,6 +20,7 @@ logger = logging.getLogger("heat-transfer-mcp.hx_shell_side_h_kern")
 
 # ========================== TEMA Helper Functions ========================== #
 
+
 def validate_tema_tubing(nps: float, bwg: int) -> Dict[str, Any]:
     """
     Validate if a tube size is TEMA-compliant using ht.hx functions.
@@ -32,10 +33,7 @@ def validate_tema_tubing(nps: float, bwg: int) -> Dict[str, Any]:
         Dict with validation result and tube dimensions if valid
     """
     if not HT_AVAILABLE:
-        return {
-            "error": "ht library required for TEMA validation",
-            "fallback": "Cannot validate without ht library"
-        }
+        return {"error": "ht library required for TEMA validation", "fallback": "Cannot validate without ht library"}
 
     try:
         from ht.hx import check_tubing_TEMA, get_tube_TEMA
@@ -52,23 +50,20 @@ def validate_tema_tubing(nps: float, bwg: int) -> Dict[str, Any]:
                 "outer_diameter_m": tube_data[2],  # Do
                 "inner_diameter_m": tube_data[3],  # Di
                 "wall_thickness_m": tube_data[4],  # t
-                "source": "ht.hx.get_tube_TEMA"
+                "source": "ht.hx.get_tube_TEMA",
             }
         else:
             return {
                 "tema_compliant": False,
                 "nps": nps,
                 "bwg": bwg,
-                "message": f"NPS={nps}, BWG={bwg} is not a standard TEMA tube size"
+                "message": f"NPS={nps}, BWG={bwg} is not a standard TEMA tube size",
             }
     except Exception as e:
         return {"error": f"TEMA validation failed: {e}"}
 
 
-def get_tema_tube_by_od(
-    target_od_m: float,
-    min_thickness_m: Optional[float] = None
-) -> Dict[str, Any]:
+def get_tema_tube_by_od(target_od_m: float, min_thickness_m: Optional[float] = None) -> Dict[str, Any]:
     """
     Find a TEMA-compliant tube close to a target outer diameter.
 
@@ -97,7 +92,7 @@ def get_tema_tube_by_od(
             "outer_diameter_m": tube_data[2],
             "inner_diameter_m": tube_data[3],
             "wall_thickness_m": tube_data[4],
-            "source": "ht.hx.get_tube_TEMA (fuzzy match)"
+            "source": "ht.hx.get_tube_TEMA (fuzzy match)",
         }
     except Exception as e:
         return {"error": f"TEMA tube lookup failed: {e}"}
@@ -120,18 +115,14 @@ def get_minimum_shell_diameter(tube_od_m: float) -> Dict[str, Any]:
         return {
             "min_shell_diameter_m": tube_od_m * 6,
             "source": "fallback (6x tube OD)",
-            "note": "Install ht library for accurate TEMA sizing"
+            "note": "Install ht library for accurate TEMA sizing",
         }
 
     try:
         from ht.hx import DBundle_min
 
         d_min = DBundle_min(tube_od_m)
-        return {
-            "min_shell_diameter_m": d_min,
-            "tube_od_m": tube_od_m,
-            "source": "ht.hx.DBundle_min"
-        }
+        return {"min_shell_diameter_m": d_min, "tube_od_m": tube_od_m, "source": "ht.hx.DBundle_min"}
     except Exception as e:
         return {"error": f"Minimum shell diameter calculation failed: {e}"}
 
@@ -154,7 +145,7 @@ def get_shell_bundle_clearance(bundle_diameter_m: float, shell_diameter_m: float
             "bundle_diameter_m": bundle_diameter_m,
             "shell_diameter_m": shell_diameter_m,
             "source": "direct calculation",
-            "note": "Install ht library for TEMA-specific clearances"
+            "note": "Install ht library for TEMA-specific clearances",
         }
 
     try:
@@ -169,17 +160,13 @@ def get_shell_bundle_clearance(bundle_diameter_m: float, shell_diameter_m: float
             "shell_diameter_m": shell_diameter_m,
             "clearance_fixed_tubesheet_m": clearance_fixed,
             "clearance_floating_head_m": clearance_floating,
-            "source": "ht.hx.shell_clearance"
+            "source": "ht.hx.shell_clearance",
         }
     except Exception as e:
         return {"error": f"Shell clearance calculation failed: {e}"}
 
 
-def get_baffle_thickness(
-    shell_diameter_m: float,
-    unsupported_length_m: float,
-    service: str = "normal"
-) -> Dict[str, Any]:
+def get_baffle_thickness(shell_diameter_m: float, unsupported_length_m: float, service: str = "normal") -> Dict[str, Any]:
     """
     Get recommended baffle thickness per TEMA standards.
 
@@ -203,7 +190,7 @@ def get_baffle_thickness(
         return {
             "baffle_thickness_m": thickness,
             "source": "fallback approximation",
-            "note": "Install ht library for TEMA-specific thickness"
+            "note": "Install ht library for TEMA-specific thickness",
         }
 
     try:
@@ -215,10 +202,11 @@ def get_baffle_thickness(
             "shell_diameter_m": shell_diameter_m,
             "unsupported_length_m": unsupported_length_m,
             "service": service,
-            "source": "ht.hx.baffle_thickness"
+            "source": "ht.hx.baffle_thickness",
         }
     except Exception as e:
         return {"error": f"Baffle thickness calculation failed: {e}"}
+
 
 def calculate_hx_shell_side_h_kern(
     shell_inner_diameter: float,
@@ -270,19 +258,21 @@ def calculate_hx_shell_side_h_kern(
     try:
         # Parameter validation
         if tube_pitch <= tube_outer_diameter:
-            return json.dumps({
-                "error": "tube_pitch must be greater than tube_outer_diameter to allow flow clearance."
-            })
+            return json.dumps({"error": "tube_pitch must be greater than tube_outer_diameter to allow flow clearance."})
         if shell_inner_diameter <= 0 or tube_outer_diameter <= 0 or tube_pitch <= 0 or baffle_spacing <= 0:
-            return json.dumps({
-                "error": "Dimensions must be positive values (shell_inner_diameter, tube_outer_diameter, tube_pitch, baffle_spacing)."
-            })
+            return json.dumps(
+                {
+                    "error": "Dimensions must be positive values (shell_inner_diameter, tube_outer_diameter, tube_pitch, baffle_spacing)."
+                }
+            )
         if not (0 < baffle_cut_percent < 50):
-            warning_msg = f"Baffle cut ({baffle_cut_percent}%) is outside typical range (15-45%). Kern's method may be inaccurate."
+            warning_msg = (
+                f"Baffle cut ({baffle_cut_percent}%) is outside typical range (15-45%). Kern's method may be inaccurate."
+            )
             if strict:
                 raise ValueError(warning_msg)
             logger.warning(warning_msg)
-        
+
         if baffle_spacing > shell_inner_diameter or baffle_spacing < shell_inner_diameter / 5.0:
             warning_msg = f"Baffle spacing ({baffle_spacing:.3f}m) is outside typical range (Ds/5 to Ds). Kern's method may be inaccurate."
             if strict:
@@ -292,32 +282,30 @@ def calculate_hx_shell_side_h_kern(
         # 1. Get Shell Fluid Properties at Bulk Temp
         bulk_props_json = get_fluid_properties(shell_fluid_name, shell_fluid_bulk_temp, shell_fluid_pressure, strict=strict)
         bulk_props = json.loads(bulk_props_json)
-        
+
         if "error" in bulk_props:
-            return json.dumps({
-                "error": f"Failed to get shell fluid properties: {bulk_props['error']}"
-            })
-        
+            return json.dumps({"error": f"Failed to get shell fluid properties: {bulk_props['error']}"})
+
         rho_b = bulk_props.get("density")
         Cp_b = bulk_props.get("specific_heat_cp")
         k_b = bulk_props.get("thermal_conductivity")
         mu_b = bulk_props.get("dynamic_viscosity")
         Pr_b = bulk_props.get("prandtl_number")
-        
+
         if any(p is None for p in [rho_b, Cp_b, k_b, mu_b, Pr_b]):
-            return json.dumps({
-                "error": f"Could not get all required bulk properties for {shell_fluid_name} at {shell_fluid_bulk_temp}K."
-            })
+            return json.dumps(
+                {"error": f"Could not get all required bulk properties for {shell_fluid_name} at {shell_fluid_bulk_temp}K."}
+            )
 
         # 2. Calculate Equivalent Diameter (De)
         if tube_layout_angle in [30, 60]:  # Triangular pitch
-            De = (4.0 * ((math.sqrt(3)/4.0)*tube_pitch**2 - (math.pi/8.0)*tube_outer_diameter**2)) / ((math.pi/2.0)*tube_outer_diameter)
+            De = (4.0 * ((math.sqrt(3) / 4.0) * tube_pitch**2 - (math.pi / 8.0) * tube_outer_diameter**2)) / (
+                (math.pi / 2.0) * tube_outer_diameter
+            )
         elif tube_layout_angle in [45, 90]:  # Square pitch (rotated or aligned)
-            De = (4.0 * (tube_pitch**2 - (math.pi/4.0)*tube_outer_diameter**2)) / (math.pi*tube_outer_diameter)
+            De = (4.0 * (tube_pitch**2 - (math.pi / 4.0) * tube_outer_diameter**2)) / (math.pi * tube_outer_diameter)
         else:
-            return json.dumps({
-                "error": "Invalid tube_layout_angle. Use 30, 45, 60, or 90."
-            })
+            return json.dumps({"error": "Invalid tube_layout_angle. Use 30, 45, 60, or 90."})
 
         # 3. Calculate Shell-Side Cross-Flow Area (As)
         clearance = tube_pitch - tube_outer_diameter
@@ -337,6 +325,7 @@ def calculate_hx_shell_side_h_kern(
             try:
                 # Use Zukauskas/ESDU/Grimison correlations for tube banks in crossflow
                 from ht.conv_tube_bank import Nu_Zukauskas_Bejan
+
                 # Estimate superficial velocity and Re on Do
                 Vs = Gs / rho_b if rho_b else 0.0
                 Re_tb = rho_b * Vs * tube_outer_diameter / mu_b if mu_b and rho_b else 0.0
@@ -350,7 +339,9 @@ def calculate_hx_shell_side_h_kern(
                 Pr_w = None
                 if tube_wall_temp is not None:
                     try:
-                        wall_props_json = get_fluid_properties(shell_fluid_name, tube_wall_temp, shell_fluid_pressure, strict=strict)
+                        wall_props_json = get_fluid_properties(
+                            shell_fluid_name, tube_wall_temp, shell_fluid_pressure, strict=strict
+                        )
                         wall_props = json.loads(wall_props_json)
                         mu_w = wall_props.get("dynamic_viscosity")
                         Cp_w = wall_props.get("specific_heat_cp")
@@ -361,7 +352,9 @@ def calculate_hx_shell_side_h_kern(
                         Pr_w = None
 
                 if Pr_w is not None:
-                    Nu_s = Nu_Zukauskas_Bejan(Re_tb, Pr_b, tube_rows=n_rows, pitch_parallel=p_par, pitch_normal=p_norm, Pr_wall=Pr_w)
+                    Nu_s = Nu_Zukauskas_Bejan(
+                        Re_tb, Pr_b, tube_rows=n_rows, pitch_parallel=p_par, pitch_normal=p_norm, Pr_wall=Pr_w
+                    )
                 else:
                     Nu_s = Nu_Zukauskas_Bejan(Re_tb, Pr_b, tube_rows=n_rows, pitch_parallel=p_par, pitch_normal=p_norm)
                 correlation_used = "Zukauskas-Bejan tube-bank crossflow"
@@ -380,7 +373,7 @@ def calculate_hx_shell_side_h_kern(
                 )
                 logger.warning(warning_msg)
             C_kern, n_kern = 0.36, 0.55
-            Nu_s = C_kern * (Re_s**n_kern) * (Pr_b**(1.0/3.0)) if Re_s > 0 else 0
+            Nu_s = C_kern * (Re_s**n_kern) * (Pr_b ** (1.0 / 3.0)) if Re_s > 0 else 0
             correlation_used = f"Kern Approx Nu = {C_kern:.2f}*Re^{n_kern:.2f}*Pr^(1/3)"
 
         # 7. Calculate h_o without viscosity correction
@@ -389,24 +382,25 @@ def calculate_hx_shell_side_h_kern(
         # 8. Apply Viscosity Correction (if wall temp is known)
         viscosity_correction = 1.0
         mu_w = None
-        
+
         if tube_wall_temp is not None:
             try:
                 wall_props_json = get_fluid_properties(shell_fluid_name, tube_wall_temp, shell_fluid_pressure, strict=strict)
                 wall_props = json.loads(wall_props_json)
-                
+
                 if "error" not in wall_props:
                     mu_w = wall_props.get("dynamic_viscosity")
-                    
+
                     if mu_w is not None and mu_w > 0 and mu_b > 0:
-                        viscosity_correction = (mu_b / mu_w)**0.14
+                        viscosity_correction = (mu_b / mu_w) ** 0.14
                     else:
                         logger.warning("Could not get wall viscosity, correction factor set to 1.0.")
                 else:
                     logger.warning(f"Error getting wall properties: {wall_props.get('error')}. Correction factor set to 1.0.")
             except Exception as e_wall_prop:
-                logger.warning(f"Could not get wall properties for viscosity correction: {e_wall_prop}. "
-                              f"Correction factor set to 1.0.")
+                logger.warning(
+                    f"Could not get wall properties for viscosity correction: {e_wall_prop}. " f"Correction factor set to 1.0."
+                )
         else:
             logger.info("Tube wall temperature not provided, viscosity correction factor (mu_b/mu_w)^0.14 not applied.")
 
@@ -430,7 +424,7 @@ def calculate_hx_shell_side_h_kern(
                         pitch=tube_pitch,
                         Do=tube_outer_diameter,
                         NBaffles=n_baffles,
-                        mu_w=mu_w
+                        mu_w=mu_w,
                     )
                 else:
                     dP = dP_Kern(
@@ -441,7 +435,7 @@ def calculate_hx_shell_side_h_kern(
                         LSpacing=baffle_spacing,
                         pitch=tube_pitch,
                         Do=tube_outer_diameter,
-                        NBaffles=n_baffles
+                        NBaffles=n_baffles,
                     )
 
                 pressure_drop_result = {
@@ -449,7 +443,7 @@ def calculate_hx_shell_side_h_kern(
                     "pressure_drop_kPa": dP / 1000,
                     "n_baffles": n_baffles,
                     "correlation": "dP_Kern (ht.conv_tube_bank)",
-                    "note": "Bundle crossflow only; excludes window/nozzle losses. Actual dP may be 20-40% higher."
+                    "note": "Bundle crossflow only; excludes window/nozzle losses. Actual dP may be 20-40% higher.",
                 }
             except ImportError as ie:
                 logger.warning(f"Could not import dP_Kern: {ie}")
@@ -458,9 +452,7 @@ def calculate_hx_shell_side_h_kern(
                 logger.warning(f"Pressure drop calculation failed: {e}")
                 pressure_drop_result = {"error": str(e)}
         elif include_pressure_drop and n_baffles is None:
-            pressure_drop_result = {
-                "note": "Pressure drop not calculated: n_baffles not provided"
-            }
+            pressure_drop_result = {"note": "Pressure drop not calculated: n_baffles not provided"}
 
         # Create result
         result = {
@@ -481,8 +473,8 @@ def calculate_hx_shell_side_h_kern(
                 "tube_pitch_m": tube_pitch,
                 "tube_layout_angle_deg": tube_layout_angle,
                 "baffle_spacing_m": baffle_spacing,
-                "baffle_cut_percent": baffle_cut_percent
-            }
+                "baffle_cut_percent": baffle_cut_percent,
+            },
         }
 
         # Add pressure drop if calculated
@@ -493,6 +485,4 @@ def calculate_hx_shell_side_h_kern(
 
     except Exception as e:
         logger.error(f"Unexpected error in calculate_hx_shell_side_h_kern: {e}", exc_info=True)
-        return json.dumps({
-            "error": f"An unexpected error occurred: {str(e)}"
-        })
+        return json.dumps({"error": f"An unexpected error occurred: {str(e)}"})

@@ -12,7 +12,7 @@ import os
 from mcp.server.fastmcp import FastMCP
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("heat-transfer-mcp")
 
 # Initialize the MCP server
@@ -23,6 +23,7 @@ UNIT_CONVERSION_ENABLED = False
 
 try:
     from utils.unit_aware_decorator import make_tool_unit_aware, TOOL_MAPPINGS
+
     UNIT_CONVERSION_ENABLED = True
     logger.info("Unit conversion system detected and enabled")
 except ImportError:
@@ -94,7 +95,7 @@ for tool in OMNIBUS_TOOLS + TOOLS:
         else:
             unit_aware_tool = tool
             logger.info(f"Registered {tool_name} (no unit mappings)")
-        
+
         # Register with MCP
         mcp.tool()(unit_aware_tool)
     else:
@@ -105,16 +106,17 @@ for tool in OMNIBUS_TOOLS + TOOLS:
 # Log information about available dependencies
 from utils.import_helpers import HT_AVAILABLE, METEOSTAT_AVAILABLE
 
+
 def log_server_capabilities():
     """Log server capabilities and unit support."""
-    logger.info("="*60)
+    logger.info("=" * 60)
     logger.info("HEAT TRANSFER MCP SERVER STARTING")
-    logger.info("="*60)
-    
+    logger.info("=" * 60)
+
     # Core dependencies
     logger.info(f"HT library available: {HT_AVAILABLE}")
     logger.info(f"Meteostat library available: {METEOSTAT_AVAILABLE}")
-    
+
     # Unit conversion status
     if UNIT_CONVERSION_ENABLED:
         logger.info("✓ UNIT CONVERSION: ENABLED")
@@ -141,13 +143,14 @@ def log_server_capabilities():
         logger.info("    Pressure: Pa")
         logger.info("    Area: m²")
         logger.info("    Power: W")
-    
-    logger.info("="*60)
+
+    logger.info("=" * 60)
     logger.info(f"Server registered {len(OMNIBUS_TOOLS) + len(TOOLS)} tools successfully")
-    logger.info("="*60)
+    logger.info("=" * 60)
+
 
 if __name__ == "__main__":
     log_server_capabilities()
-    
+
     # Start the server
     mcp.run()

@@ -1,4 +1,5 @@
 """Test tool functionality."""
+
 import json
 import pytest
 from tools.fluid_properties import get_fluid_properties

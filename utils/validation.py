@@ -73,7 +73,7 @@ def ensure_list_nonempty(name: str, value: Any) -> None:
 
 
 def set_in_path(obj: Dict[str, Any], path: str, value: Any) -> None:
-    parts = path.split('.') if path else []
+    parts = path.split(".") if path else []
     if not parts:
         raise ValidationError("Empty parameter path")
     cur = obj
@@ -82,4 +82,3 @@ def set_in_path(obj: Dict[str, Any], path: str, value: Any) -> None:
             cur[p] = {}
         cur = cur[p]
     cur[parts[-1]] = value
-

@@ -18,17 +18,17 @@ from tools.tank_heat_loss import tank_heat_loss
 
 class TestSkyTemperature:
     """Test sky temperature estimation formula."""
-    
+
     def test_sky_temp_without_dew_point(self):
         """Test Swinbank correlation for clear sky."""
         T_ambient = 273.15  # 0°C
         T_sky = estimate_sky_temperature(T_ambient)
-        
+
         # Sky should be colder than ambient
         assert T_sky < T_ambient
         # But not unreasonably cold (should be > -50°C)
         assert T_sky > 223.15
-        
+
     def test_sky_temp_with_dew_point(self):
         """Test improved formula with dew point."""
         T_ambient = 273.15  # 0°C
@@ -42,26 +42,26 @@ class TestSkyTemperature:
         assert T_sky < T_ambient  # Sky is colder than ambient
         # Typical sky temperature depression is 15-30K below ambient for clear sky
         assert 240 < T_sky < 260
-        
+
     def test_sky_temp_formula_correction(self):
         """Verify the critical formula fix (emissivity^0.25)."""
         T_ambient = 273.15
         T_dew = 268.15  # -5°C dew point
-        
+
         # Calculate emissivity using the formula
         Td_C = T_dew - 273.15
-        eps_clear = 0.711 + 0.0056*Td_C + 0.000073*(Td_C**2)
-        
+        eps_clear = 0.711 + 0.0056 * Td_C + 0.000073 * (Td_C**2)
+
         # Sky temperature should use fourth root
-        expected = T_ambient * (eps_clear ** 0.25)
+        expected = T_ambient * (eps_clear**0.25)
         actual = estimate_sky_temperature(T_ambient, T_dew)
-        
+
         assert abs(actual - expected) < 0.1
 
 
 class TestSurfaceHeatTransfer:
     """Test surface heat transfer with view factors."""
-    
+
     def test_vertical_cylinder_area(self):
         """Test that vertical cylinder excludes bottom from air-exposed area."""
         result_json = calculate_surface_heat_transfer(
@@ -71,22 +71,22 @@ class TestSurfaceHeatTransfer:
             ambient_air_temperature=273.15,
             wind_speed=5.0,
             surface_emissivity=0.9,
-            wall_layers=[{"thickness": 0.1, "thermal_conductivity_k": 50}]
+            wall_layers=[{"thickness": 0.1, "thermal_conductivity_k": 50}],
         )
-        
+
         result = json.loads(result_json)
         assert "error" not in result
-        
+
         # Area should be lateral + top only (not bottom)
         diameter = 10.0
         height = 5.0
         lateral_area = 3.14159 * diameter * height
-        top_area = 3.14159 * (diameter/2)**2
+        top_area = 3.14159 * (diameter / 2) ** 2
         expected_area = lateral_area + top_area
-        
+
         actual_area = result["outer_surface_area_m2"]
         assert abs(actual_area - expected_area) / expected_area < 0.01
-        
+
     def test_view_factors_applied(self):
         """Test that view factors affect radiation calculation."""
         # Test with default view factors
@@ -98,9 +98,9 @@ class TestSurfaceHeatTransfer:
             wind_speed=5.0,
             surface_emissivity=0.9,
             view_factor_sky_vertical=0.5,
-            view_factor_sky_horizontal=1.0
+            view_factor_sky_horizontal=1.0,
         )
-        
+
         # Test with different view factors
         result2_json = calculate_surface_heat_transfer(
             geometry="vertical_cylinder_tank",
@@ -110,15 +110,15 @@ class TestSurfaceHeatTransfer:
             wind_speed=5.0,
             surface_emissivity=0.9,
             view_factor_sky_vertical=1.0,  # All sky
-            view_factor_sky_horizontal=1.0
+            view_factor_sky_horizontal=1.0,
         )
-        
+
         result1 = json.loads(result1_json)
         result2 = json.loads(result2_json)
-        
+
         # More sky view should mean more radiation loss
         assert result2["radiative_heat_rate_w"] > result1["radiative_heat_rate_w"]
-        
+
     def test_convergence(self):
         """Test that iterative solver converges."""
         result_json = calculate_surface_heat_transfer(
@@ -127,9 +127,9 @@ class TestSurfaceHeatTransfer:
             internal_temperature=350.0,  # Hot surface
             ambient_air_temperature=273.15,
             wind_speed=10.0,
-            surface_emissivity=0.8
+            surface_emissivity=0.8,
         )
-        
+
         result = json.loads(result_json)
         assert "error" not in result
         assert result["converged"] == True
@@ -138,7 +138,7 @@ class TestSurfaceHeatTransfer:
 
 class TestTankHeatLoss:
     """Test the main tank heat loss omnibus tool."""
-    
+
     def test_basic_tank_calculation(self):
         """Test basic vertical tank heat loss calculation."""
         result_json = tank_heat_loss(
@@ -147,7 +147,7 @@ class TestTankHeatLoss:
             contents_temperature=308.15,  # 35°C
             ambient_air_temperature=273.15,  # 0°C
             wind_speed=5.0,
-            insulation_R_value_si=2.0
+            insulation_R_value_si=2.0,
         )
 
         result = json.loads(result_json)
@@ -160,7 +160,7 @@ class TestTankHeatLoss:
         # colder than ambient air temperature. This is physically correct.
         # The surface radiates heat to the cold sky while receiving convective heat from air.
         assert result["estimated_outer_surface_temp_k"] > 260  # But not extremely cold
-        
+
     def test_ground_contact_included(self):
         """Test that vertical tanks automatically include ground heat loss."""
         result_json = tank_heat_loss(
@@ -168,37 +168,37 @@ class TestTankHeatLoss:
             dimensions={"diameter": 10.0, "height": 10.0},
             contents_temperature=308.15,
             ambient_air_temperature=273.15,
-            wind_speed=5.0
+            wind_speed=5.0,
         )
-        
+
         result = json.loads(result_json)
         assert "error" not in result
-        
+
         # Vertical tank should have ground heat loss
         assert result["ground_heat_loss_w"] > 0
         assert "ground_details" in result
-        
+
     def test_headspace_modeling(self):
         """Test two-zone headspace model."""
         result_json = tank_heat_loss(
-            geometry="vertical_cylinder_tank", 
+            geometry="vertical_cylinder_tank",
             dimensions={"diameter": 10.0, "height": 10.0},
             contents_temperature=308.15,
             ambient_air_temperature=273.15,
             wind_speed=5.0,
             headspace_height_m=2.0,  # 2m of gas space
-            headspace_fluid="air"
+            headspace_fluid="air",
         )
-        
+
         result = json.loads(result_json)
         assert "error" not in result
-        
+
         # Should have headspace info
         assert "headspace_info" in result
         assert result["headspace_info"]["headspace_height_m"] == 2.0
         assert result["headspace_info"]["wetted_heat_loss_w"] > 0
         assert result["headspace_info"]["dry_heat_loss_w"] > 0
-        
+
     def test_insulation_effectiveness(self):
         """Test that insulation reduces heat loss."""
         # No insulation
@@ -208,9 +208,9 @@ class TestTankHeatLoss:
             contents_temperature=308.15,
             ambient_air_temperature=273.15,
             wind_speed=5.0,
-            insulation_R_value_si=0.0
+            insulation_R_value_si=0.0,
         )
-        
+
         # With insulation
         result2_json = tank_heat_loss(
             geometry="vertical_cylinder_tank",
@@ -218,15 +218,15 @@ class TestTankHeatLoss:
             contents_temperature=308.15,
             ambient_air_temperature=273.15,
             wind_speed=5.0,
-            insulation_R_value_si=3.0
+            insulation_R_value_si=3.0,
         )
-        
+
         result1 = json.loads(result1_json)
         result2 = json.loads(result2_json)
-        
+
         # Insulation should significantly reduce heat loss
         assert result2["total_heat_loss_w"] < result1["total_heat_loss_w"] * 0.5
-        
+
 
 class TestPhysicsValidation:
     """Validate physics against known solutions."""
@@ -244,7 +244,7 @@ class TestPhysicsValidation:
             wind_speed=10.0,  # High wind for higher h_outer (~25-50 W/m²K)
             surface_emissivity=0.0,  # No radiation
             wall_layers=[{"thickness": 0.1, "thermal_conductivity_k": 1.0}],
-            internal_convection_coefficient_h_override=10000  # Very high internal h
+            internal_convection_coefficient_h_override=10000,  # Very high internal h
         )
 
         result = json.loads(result_json)
@@ -294,16 +294,12 @@ if __name__ == "__main__":
     # Run tests with pytest if available, otherwise run directly
     try:
         import pytest
+
         pytest.main([__file__, "-v"])
     except ImportError:
         # Run tests manually
-        test_classes = [
-            TestSkyTemperature(),
-            TestSurfaceHeatTransfer(),
-            TestTankHeatLoss(),
-            TestPhysicsValidation()
-        ]
-        
+        test_classes = [TestSkyTemperature(), TestSurfaceHeatTransfer(), TestTankHeatLoss(), TestPhysicsValidation()]
+
         for test_class in test_classes:
             print(f"\nTesting {test_class.__class__.__name__}...")
             for method_name in dir(test_class):

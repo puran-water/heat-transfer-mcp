@@ -36,7 +36,7 @@ TOOL_REGISTRY: Dict[str, Callable[..., str]] = {
 
 def _get_from_path(data: Dict[str, Any], path: str) -> Any:
     cur: Any = data
-    for part in path.split('.'):
+    for part in path.split("."):
         if isinstance(cur, dict) and part in cur:
             cur = cur[part]
         else:
@@ -90,22 +90,22 @@ def parameter_optimization(
         if not constraints:
             return True
         for c in constraints:
-            key = c.get('key')
-            op = c.get('op')
-            val = c.get('value')
+            key = c.get("key")
+            op = c.get("op")
+            val = c.get("value")
             cur = _get_from_path(res, key) if key else None
             try:
-                if op == '<=' and not (cur <= val):
+                if op == "<=" and not (cur <= val):
                     return False
-                if op == '>=' and not (cur >= val):
+                if op == ">=" and not (cur >= val):
                     return False
-                if op == '==' and not (cur == val):
+                if op == "==" and not (cur == val):
                     return False
-                if op == '!=' and not (cur != val):
+                if op == "!=" and not (cur != val):
                     return False
-                if op == '<' and not (cur < val):
+                if op == "<" and not (cur < val):
                     return False
-                if op == '>' and not (cur > val):
+                if op == ">" and not (cur > val):
                     return False
             except Exception:
                 return False
@@ -129,8 +129,8 @@ def parameter_optimization(
         except Exception as e:
             evaluated.append({"params": params, "error": str(e)})
             continue
-        if 'error' in res:
-            evaluated.append({"params": params, "error": res['error']})
+        if "error" in res:
+            evaluated.append({"params": params, "error": res["error"]})
             continue
 
         if not constraint_ok(res):
@@ -142,15 +142,17 @@ def parameter_optimization(
 
     # Rank results
     feas = [e for e in evaluated if e.get("feasible") and e.get("objective") is not None]
-    reverse = True if direction.lower() == 'maximize' else False
+    reverse = True if direction.lower() == "maximize" else False
     feas_sorted = sorted(feas, key=lambda e: e.get("objective"), reverse=reverse)
     top = feas_sorted[: max(1, int(top_n))]
 
-    return json.dumps({
-        "tool": tool_name,
-        "objective_key": objective_key,
-        "direction": direction,
-        "top": top,
-        "evaluated_count": len(evaluated),
-        "feasible_count": len(feas_sorted),
-    })
+    return json.dumps(
+        {
+            "tool": tool_name,
+            "objective_key": objective_key,
+            "direction": direction,
+            "top": top,
+            "evaluated_count": len(evaluated),
+            "feasible_count": len(feas_sorted),
+        }
+    )

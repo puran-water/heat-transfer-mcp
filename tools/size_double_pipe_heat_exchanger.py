@@ -145,18 +145,22 @@ def size_double_pipe_heat_exchanger(
         if not HT_AVAILABLE:
             if strict:
                 return json.dumps({"error": "ht library required with strict=True"})
-            return json.dumps({
-                "error": "ht library not available for double-pipe sizing",
-                "suggestion": "Install with: pip install ht>=1.2.0"
-            })
+            return json.dumps(
+                {
+                    "error": "ht library not available for double-pipe sizing",
+                    "suggestion": "Install with: pip install ht>=1.2.0",
+                }
+            )
 
         if not FLUIDS_AVAILABLE:
             if strict:
                 return json.dumps({"error": "fluids library required with strict=True"})
-            return json.dumps({
-                "error": "fluids library not available for double-pipe sizing",
-                "suggestion": "Install with: pip install fluids>=1.0.0"
-            })
+            return json.dumps(
+                {
+                    "error": "fluids library not available for double-pipe sizing",
+                    "suggestion": "Install with: pip install fluids>=1.0.0",
+                }
+            )
 
         # Validate required inputs
         if hot_mass_flow_kg_s is None or hot_mass_flow_kg_s <= 0:
@@ -173,9 +177,7 @@ def size_double_pipe_heat_exchanger(
         if solve_for == "rating":
             # Rating mode: inlet temps required, outlet temps calculated
             if hot_inlet_temp_K is None or cold_inlet_temp_K is None:
-                return json.dumps({
-                    "error": "Both inlet temperatures required for rating mode"
-                })
+                return json.dumps({"error": "Both inlet temperatures required for rating mode"})
             # For rating, we need to estimate outlet temps initially
             # Use a reasonable assumption (will be recalculated)
             if hot_outlet_temp_K is None:
@@ -186,47 +188,40 @@ def size_double_pipe_heat_exchanger(
             # Sizing mode
             if heat_duty_W is None:
                 if temps_count < 4:
-                    return json.dumps({
-                        "error": "Either heat_duty_W or all four temperatures must be provided for sizing"
-                    })
+                    return json.dumps({"error": "Either heat_duty_W or all four temperatures must be provided for sizing"})
             else:
                 if hot_inlet_temp_K is None or cold_inlet_temp_K is None:
-                    return json.dumps({
-                        "error": "Both inlet temperatures required when heat_duty_W is provided"
-                    })
+                    return json.dumps({"error": "Both inlet temperatures required when heat_duty_W is provided"})
 
         # Validate geometry
         if outer_pipe_inner_diameter_m <= inner_pipe_outer_diameter_m:
-            return json.dumps({
-                "error": f"outer_pipe_inner_diameter_m ({outer_pipe_inner_diameter_m}) must be > "
-                         f"inner_pipe_outer_diameter_m ({inner_pipe_outer_diameter_m})"
-            })
+            return json.dumps(
+                {
+                    "error": f"outer_pipe_inner_diameter_m ({outer_pipe_inner_diameter_m}) must be > "
+                    f"inner_pipe_outer_diameter_m ({inner_pipe_outer_diameter_m})"
+                }
+            )
         if inner_pipe_inner_diameter_m >= inner_pipe_outer_diameter_m:
-            return json.dumps({
-                "error": f"inner_pipe_inner_diameter_m ({inner_pipe_inner_diameter_m}) must be < "
-                         f"inner_pipe_outer_diameter_m ({inner_pipe_outer_diameter_m})"
-            })
+            return json.dumps(
+                {
+                    "error": f"inner_pipe_inner_diameter_m ({inner_pipe_inner_diameter_m}) must be < "
+                    f"inner_pipe_outer_diameter_m ({inner_pipe_outer_diameter_m})"
+                }
+            )
 
         # Validate flow arrangement
         flow_lower = flow_arrangement.lower()
         if flow_lower not in ["counterflow", "parallel", "parallelflow"]:
-            return json.dumps({
-                "error": f"flow_arrangement must be 'counterflow' or 'parallel', got '{flow_arrangement}'"
-            })
+            return json.dumps({"error": f"flow_arrangement must be 'counterflow' or 'parallel', got '{flow_arrangement}'"})
         is_counterflow = flow_lower == "counterflow"
 
         # Validate rating mode
         if solve_for == "rating":
             if pipe_length_m is None or pipe_length_m <= 0:
-                return json.dumps({
-                    "error": "pipe_length_m required for rating mode (solve_for='rating')"
-                })
+                return json.dumps({"error": "pipe_length_m required for rating mode (solve_for='rating')"})
 
         # Calculate annulus geometry using shared utility
-        annulus_geom = calculate_annulus_geometry(
-            D_outer=outer_pipe_inner_diameter_m,
-            D_inner=inner_pipe_outer_diameter_m
-        )
+        annulus_geom = calculate_annulus_geometry(D_outer=outer_pipe_inner_diameter_m, D_inner=inner_pipe_outer_diameter_m)
 
         # Inner pipe geometry
         A_inner = math.pi * inner_pipe_inner_diameter_m**2 / 4
@@ -310,14 +305,16 @@ def size_double_pipe_heat_exchanger(
             Tho=hot_outlet_temp_K,
             Tci=cold_inlet_temp_K,
             Tco=cold_outlet_temp_K,
-            counterflow=is_counterflow
+            counterflow=is_counterflow,
         )
 
         if lmtd_error:
-            return json.dumps({
-                "error": f"LMTD calculation failed: {lmtd_error}",
-                "hint": "Hot fluid must be hotter than cold fluid at both ends"
-            })
+            return json.dumps(
+                {
+                    "error": f"LMTD calculation failed: {lmtd_error}",
+                    "hint": "Hot fluid must be hotter than cold fluid at both ends",
+                }
+            )
 
         # Import required functions from upstream ht/fluids libraries
         from ht.conv_internal import Nu_conv_internal
@@ -354,8 +351,9 @@ def size_double_pipe_heat_exchanger(
             # May fail for laminar flow - use Hausen correlation
             if Re_inner < 2300:
                 # Hausen correlation for laminar developing flow
-                Nu_inner = 3.66 + 0.065 * (inner_pipe_inner_diameter_m / max_length_m) * Re_inner * Pr_inner / \
-                           (1 + 0.04 * ((inner_pipe_inner_diameter_m / max_length_m) * Re_inner * Pr_inner)**(2/3))
+                Nu_inner = 3.66 + 0.065 * (inner_pipe_inner_diameter_m / max_length_m) * Re_inner * Pr_inner / (
+                    1 + 0.04 * ((inner_pipe_inner_diameter_m / max_length_m) * Re_inner * Pr_inner) ** (2 / 3)
+                )
             else:
                 return json.dumps({"error": f"Inner pipe Nusselt calculation failed: {e}"})
 
@@ -389,7 +387,7 @@ def size_double_pipe_heat_exchanger(
             k_wall=inner_pipe_material_conductivity_W_mK,
             fouling_inner=fouling_factor_inner_m2K_W,
             fouling_outer=fouling_factor_annulus_m2K_W,
-            reference="outer"  # Reference to pipe OD for area calculation
+            reference="outer",  # Reference to pipe OD for area calculation
         )
         U = U_result["U_W_m2K"]
 
@@ -417,7 +415,7 @@ def size_double_pipe_heat_exchanger(
             NTU = UA / C_min if C_min > 0 else 0
 
             # Get effectiveness using ht library
-            subtype = 'counterflow' if is_counterflow else 'parallel'
+            subtype = "counterflow" if is_counterflow else "parallel"
             effectiveness = effectiveness_from_NTU(NTU, Cr, subtype=subtype)
 
             # Calculate actual duty from effectiveness
@@ -435,7 +433,7 @@ def size_double_pipe_heat_exchanger(
                     Tho=actual_hot_outlet_K,
                     Tci=cold_inlet_temp_K,
                     Tco=actual_cold_outlet_K,
-                    counterflow=is_counterflow
+                    counterflow=is_counterflow,
                 )
             except Exception:
                 actual_LMTD = None
@@ -447,7 +445,7 @@ def size_double_pipe_heat_exchanger(
                 mu=mu_inner,
                 D=inner_pipe_inner_diameter_m,
                 roughness=inner_pipe_roughness_m,
-                L=L_actual * n_hairpins
+                L=L_actual * n_hairpins,
             )
             # Add U-bend losses for hairpin (1.5 velocity heads per hairpin)
             if n_hairpins > 1:
@@ -459,7 +457,7 @@ def size_double_pipe_heat_exchanger(
                 mu=mu_annulus,
                 D=annulus_geom["D_hydraulic_m"],
                 roughness=0,  # Smooth outer pipe
-                L=L_actual * n_hairpins
+                L=L_actual * n_hairpins,
             )
 
             result = {
@@ -473,7 +471,6 @@ def size_double_pipe_heat_exchanger(
                 "effectiveness": effectiveness,
                 "NTU": NTU,
                 "Cr": Cr,
-
                 "geometry": {
                     "type": "double_pipe",
                     "pipe_length_m": L_actual,
@@ -494,9 +491,8 @@ def size_double_pipe_heat_exchanger(
                         "equivalent_diameter_m": annulus_geom["D_equivalent_m"],
                         "flow_area_m2": annulus_geom["A_annulus_m2"],
                         "gap_m": annulus_geom["gap_m"],
-                    }
+                    },
                 },
-
                 "thermal": {
                     "U_W_m2K": U,
                     "h_inner_W_m2K": h_inner,
@@ -514,7 +510,6 @@ def size_double_pipe_heat_exchanger(
                     "fouling_inner_m2K_W": fouling_factor_inner_m2K_W,
                     "fouling_annulus_m2K_W": fouling_factor_annulus_m2K_W,
                 },
-
                 "hydraulic": {
                     "velocity_inner_m_s": v_inner,
                     "velocity_annulus_m_s": v_annulus,
@@ -523,7 +518,6 @@ def size_double_pipe_heat_exchanger(
                     "pressure_drop_annulus_Pa": dP_annulus,
                     "pressure_drop_annulus_kPa": dP_annulus / 1000,
                 },
-
                 "temperatures": {
                     "hot_inlet_K": hot_inlet_temp_K,
                     "hot_inlet_C": hot_inlet_temp_K - 273.15,
@@ -534,12 +528,10 @@ def size_double_pipe_heat_exchanger(
                     "cold_outlet_K": actual_cold_outlet_K,
                     "cold_outlet_C": actual_cold_outlet_K - 273.15,
                 },
-
                 "configuration": {
                     "flow_arrangement": flow_arrangement,
                     "inner_pipe_fluid": inner_pipe_fluid,
                 },
-
                 "warnings": velocity_warnings if velocity_warnings else None,
             }
 
@@ -568,7 +560,7 @@ def size_double_pipe_heat_exchanger(
                     mu=mu_inner,
                     D=inner_pipe_inner_diameter_m,
                     roughness=inner_pipe_roughness_m,
-                    L=L * n_hairpins
+                    L=L * n_hairpins,
                 )
                 # Add U-bend losses
                 if n_hairpins > 1:
@@ -580,7 +572,7 @@ def size_double_pipe_heat_exchanger(
                     mu=mu_annulus,
                     D=annulus_geom["D_hydraulic_m"],
                     roughness=0,
-                    L=L * n_hairpins
+                    L=L * n_hairpins,
                 )
 
                 # Check thermal constraint
@@ -628,7 +620,6 @@ def size_double_pipe_heat_exchanger(
                         "LMTD_K": LMTD,
                         "effectiveness": effectiveness,
                         "NTU": NTU,
-
                         "geometry": {
                             "type": "double_pipe",
                             "pipe_length_m": L,
@@ -651,9 +642,8 @@ def size_double_pipe_heat_exchanger(
                                 "equivalent_diameter_m": annulus_geom["D_equivalent_m"],
                                 "flow_area_m2": annulus_geom["A_annulus_m2"],
                                 "gap_m": annulus_geom["gap_m"],
-                            }
+                            },
                         },
-
                         "thermal": {
                             "U_W_m2K": U,
                             "h_inner_W_m2K": h_inner,
@@ -671,7 +661,6 @@ def size_double_pipe_heat_exchanger(
                             "fouling_inner_m2K_W": fouling_factor_inner_m2K_W,
                             "fouling_annulus_m2K_W": fouling_factor_annulus_m2K_W,
                         },
-
                         "hydraulic": {
                             "velocity_inner_m_s": v_inner,
                             "velocity_annulus_m_s": v_annulus,
@@ -680,7 +669,6 @@ def size_double_pipe_heat_exchanger(
                             "pressure_drop_annulus_Pa": dP_annulus,
                             "pressure_drop_annulus_kPa": dP_annulus / 1000,
                         },
-
                         "temperatures": {
                             "hot_inlet_K": hot_inlet_temp_K,
                             "hot_inlet_C": hot_inlet_temp_K - 273.15,
@@ -690,17 +678,17 @@ def size_double_pipe_heat_exchanger(
                             "cold_inlet_C": cold_inlet_temp_K - 273.15,
                             "cold_outlet_K": cold_outlet_temp_K,
                             "cold_outlet_C": cold_outlet_temp_K - 273.15,
-                            "terminal_temp_diff_min_K": min(hot_inlet_temp_K - cold_outlet_temp_K,
-                                                            hot_outlet_temp_K - cold_inlet_temp_K),
-                            "terminal_temp_diff_max_K": max(hot_inlet_temp_K - cold_outlet_temp_K,
-                                                            hot_outlet_temp_K - cold_inlet_temp_K),
+                            "terminal_temp_diff_min_K": min(
+                                hot_inlet_temp_K - cold_outlet_temp_K, hot_outlet_temp_K - cold_inlet_temp_K
+                            ),
+                            "terminal_temp_diff_max_K": max(
+                                hot_inlet_temp_K - cold_outlet_temp_K, hot_outlet_temp_K - cold_inlet_temp_K
+                            ),
                         },
-
                         "configuration": {
                             "flow_arrangement": flow_arrangement,
                             "inner_pipe_fluid": inner_pipe_fluid,
                         },
-
                         "fluids": {
                             "inner_pipe": {
                                 "name": inner_fluid,
@@ -719,14 +707,15 @@ def size_double_pipe_heat_exchanger(
                                 "specific_heat_J_kgK": cp_annulus,
                             },
                         },
-
                         "heat_balance_verification": {
                             "Q_from_LMTD_kW": U * A_available * LMTD / 1000,
                             "Q_from_hot_side_kW": hot_mass_flow_kg_s * cp_hot * (hot_inlet_temp_K - hot_outlet_temp_K) / 1000,
-                            "Q_from_cold_side_kW": cold_mass_flow_kg_s * cp_cold * (cold_outlet_temp_K - cold_inlet_temp_K) / 1000,
+                            "Q_from_cold_side_kW": cold_mass_flow_kg_s
+                            * cp_cold
+                            * (cold_outlet_temp_K - cold_inlet_temp_K)
+                            / 1000,
                             "balance_satisfied": True,
                         },
-
                         "warnings": velocity_warnings if velocity_warnings else None,
                     }
 
@@ -742,38 +731,43 @@ def size_double_pipe_heat_exchanger(
             thermal_ok = [r for r in all_results if r["thermal_satisfied"]]
             if thermal_ok:
                 closest = min(thermal_ok, key=lambda r: r["dP_inner_kPa"] + r["dP_annulus_kPa"])
-                return json.dumps({
-                    "error": "No configuration satisfies both thermal AND hydraulic constraints",
-                    "closest_thermal_solution": closest,
-                    "suggestion": "Try increasing max_pressure_drop_*_kPa or max_velocity_*_m_s",
-                    "alternatives": [
-                        "Increase max_length_m",
-                        "Use multiple hairpins (n_hairpins > 1)",
-                        "Use larger pipe diameters to reduce velocity"
-                    ],
-                    "velocity_warnings": velocity_warnings,
-                })
+                return json.dumps(
+                    {
+                        "error": "No configuration satisfies both thermal AND hydraulic constraints",
+                        "closest_thermal_solution": closest,
+                        "suggestion": "Try increasing max_pressure_drop_*_kPa or max_velocity_*_m_s",
+                        "alternatives": [
+                            "Increase max_length_m",
+                            "Use multiple hairpins (n_hairpins > 1)",
+                            "Use larger pipe diameters to reduce velocity",
+                        ],
+                        "velocity_warnings": velocity_warnings,
+                    }
+                )
             else:
                 closest = min(all_results, key=lambda r: r["area_required_m2"] - r["area_available_m2"])
-                return json.dumps({
-                    "error": "No configuration satisfies thermal requirement within length range",
-                    "required_length_m": L_per_hairpin_required,
-                    "max_length_searched_m": max_length_m,
-                    "closest_solution": closest,
-                    "suggestion": f"Try increasing max_length_m to at least {L_per_hairpin_required:.1f}m "
-                                  f"or use more hairpins (currently n_hairpins={n_hairpins})",
-                })
+                return json.dumps(
+                    {
+                        "error": "No configuration satisfies thermal requirement within length range",
+                        "required_length_m": L_per_hairpin_required,
+                        "max_length_searched_m": max_length_m,
+                        "closest_solution": closest,
+                        "suggestion": f"Try increasing max_length_m to at least {L_per_hairpin_required:.1f}m "
+                        f"or use more hairpins (currently n_hairpins={n_hairpins})",
+                    }
+                )
         else:
-            return json.dumps({
-                "error": "Could not evaluate any pipe length configurations",
-                "suggestion": "Check geometry parameters"
-            })
+            return json.dumps(
+                {"error": "Could not evaluate any pipe length configurations", "suggestion": "Check geometry parameters"}
+            )
 
     except ImportError as e:
-        return json.dumps({
-            "error": f"Required library import failed: {e}",
-            "suggestion": "Install with: pip install ht>=1.2.0 fluids>=1.0.0"
-        })
+        return json.dumps(
+            {
+                "error": f"Required library import failed: {e}",
+                "suggestion": "Install with: pip install ht>=1.2.0 fluids>=1.0.0",
+            }
+        )
     except Exception as e:
         logger.error(f"Error in size_double_pipe_heat_exchanger: {e}", exc_info=True)
         return json.dumps({"error": str(e)})

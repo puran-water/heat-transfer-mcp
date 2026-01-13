@@ -102,11 +102,11 @@ def calculate_pressure_drop(
             return json.dumps({"error": "geometry must be a non-empty string."})
 
         geometry_lower = geometry.lower()
-        valid_geometries = ['plate_chevron', 'chevron', 'pipe_internal', 'pipe', 'shell_side_kern', 'shell_kern', 'kern']
+        valid_geometries = ["plate_chevron", "chevron", "pipe_internal", "pipe", "shell_side_kern", "shell_kern", "kern"]
         if not any(g in geometry_lower for g in valid_geometries):
-            return json.dumps({
-                "error": f"Unsupported geometry: {geometry}. Valid options: plate_chevron, pipe_internal, shell_side_kern"
-            })
+            return json.dumps(
+                {"error": f"Unsupported geometry: {geometry}. Valid options: plate_chevron, pipe_internal, shell_side_kern"}
+            )
 
         if mass_flow_kg_s is None or mass_flow_kg_s <= 0:
             return json.dumps({"error": "mass_flow_kg_s must be positive."})
@@ -115,15 +115,11 @@ def calculate_pressure_drop(
             return json.dumps({"error": "fluid_temperature_K must be positive."})
 
         # Get fluid properties
-        fluid_props_json = get_fluid_properties(
-            fluid_name, fluid_temperature_K, fluid_pressure_Pa, strict=strict
-        )
+        fluid_props_json = get_fluid_properties(fluid_name, fluid_temperature_K, fluid_pressure_Pa, strict=strict)
         fluid_props = json.loads(fluid_props_json)
 
         if "error" in fluid_props:
-            return json.dumps({
-                "error": f"Failed to get fluid properties: {fluid_props['error']}"
-            })
+            return json.dumps({"error": f"Failed to get fluid properties: {fluid_props['error']}"})
 
         rho = fluid_props.get("density")
         mu = fluid_props.get("dynamic_viscosity")
@@ -131,7 +127,7 @@ def calculate_pressure_drop(
             return json.dumps({"error": "Missing density or viscosity from fluid properties."})
 
         # Route to appropriate calculation
-        if 'plate_chevron' in geometry_lower or 'chevron' in geometry_lower:
+        if "plate_chevron" in geometry_lower or "chevron" in geometry_lower:
             return _calculate_phe_pressure_drop(
                 mass_flow_kg_s=mass_flow_kg_s,
                 rho=rho,
@@ -151,7 +147,7 @@ def calculate_pressure_drop(
                 strict=strict,
             )
 
-        elif 'pipe_internal' in geometry_lower or geometry_lower == 'pipe':
+        elif "pipe_internal" in geometry_lower or geometry_lower == "pipe":
             return _calculate_pipe_pressure_drop(
                 mass_flow_kg_s=mass_flow_kg_s,
                 rho=rho,
@@ -164,7 +160,7 @@ def calculate_pressure_drop(
                 strict=strict,
             )
 
-        elif 'shell_side_kern' in geometry_lower or 'shell_kern' in geometry_lower or 'kern' in geometry_lower:
+        elif "shell_side_kern" in geometry_lower or "shell_kern" in geometry_lower or "kern" in geometry_lower:
             return _calculate_shell_side_kern_pressure_drop(
                 mass_flow_kg_s=mass_flow_kg_s,
                 rho=rho,
@@ -222,27 +218,27 @@ def _calculate_phe_pressure_drop(
         return json.dumps({"error": "n_channels is required and must be positive for plate_chevron."})
 
     # Validate correlation
-    valid_correlations = ['auto', 'Martin_1999', 'Martin_VDI', 'Kumar', 'Muley_Manglik']
+    valid_correlations = ["auto", "Martin_1999", "Martin_VDI", "Kumar", "Muley_Manglik"]
     if correlation not in valid_correlations:
-        return json.dumps({
-            "error": f"Invalid correlation: {correlation}. Valid options: {valid_correlations}"
-        })
+        return json.dumps({"error": f"Invalid correlation: {correlation}. Valid options: {valid_correlations}"})
 
-    if correlation == 'Muley_Manglik' and plate_enlargement_factor is None:
+    if correlation == "Muley_Manglik" and plate_enlargement_factor is None:
         return json.dumps({"error": "plate_enlargement_factor is required for Muley_Manglik correlation."})
 
     # Default to Martin_VDI if auto
-    if correlation == 'auto':
-        correlation = 'Martin_VDI'
+    if correlation == "auto":
+        correlation = "Martin_VDI"
 
     # Check for fluids library
     if not FLUIDS_AVAILABLE:
         if strict:
             return json.dumps({"error": "fluids library required with strict=True"})
-        return json.dumps({
-            "error": "fluids library not available for PHE pressure drop calculations",
-            "suggestion": "Install with: pip install fluids>=1.0.0"
-        })
+        return json.dumps(
+            {
+                "error": "fluids library not available for PHE pressure drop calculations",
+                "suggestion": "Install with: pip install fluids>=1.0.0",
+            }
+        )
 
     try:
         # Import friction factor correlations
@@ -264,28 +260,28 @@ def _calculate_phe_pressure_drop(
 
         # Calculate friction factor using selected correlation
         correlation_notes = []
-        if correlation == 'Martin_1999':
+        if correlation == "Martin_1999":
             if chevron_angle < 0 or chevron_angle > 80:
                 correlation_notes.append(f"Warning: Martin_1999 valid for chevron 0-80°, got {chevron_angle}°")
             if Re < 200 or Re > 10000:
                 correlation_notes.append(f"Warning: Martin_1999 valid for Re 200-10000, got Re={Re:.1f}")
             f_darcy = friction_plate_Martin_1999(Re, chevron_angle)
 
-        elif correlation == 'Martin_VDI':
+        elif correlation == "Martin_VDI":
             if chevron_angle < 0 or chevron_angle > 80:
                 correlation_notes.append(f"Warning: Martin_VDI valid for chevron 0-80°, got {chevron_angle}°")
             if Re < 200 or Re > 10000:
                 correlation_notes.append(f"Warning: Martin_VDI valid for Re 200-10000, got Re={Re:.1f}")
             f_darcy = friction_plate_Martin_VDI(Re, chevron_angle)
 
-        elif correlation == 'Kumar':
+        elif correlation == "Kumar":
             if chevron_angle < 30 or chevron_angle > 65:
                 correlation_notes.append(f"Warning: Kumar valid for chevron 30-65°, got {chevron_angle}°")
             if Re < 0.1 or Re > 10000:
                 correlation_notes.append(f"Warning: Kumar valid for Re 0.1-10000, got Re={Re:.1f}")
             f_darcy = friction_plate_Kumar(Re, chevron_angle)
 
-        elif correlation == 'Muley_Manglik':
+        elif correlation == "Muley_Manglik":
             if chevron_angle < 30 or chevron_angle > 60:
                 correlation_notes.append(f"Warning: Muley_Manglik valid for chevron 30-60°, got {chevron_angle}°")
             if Re < 1000:
@@ -356,10 +352,12 @@ def _calculate_phe_pressure_drop(
         return json.dumps(result)
 
     except ImportError as e:
-        return json.dumps({
-            "error": f"Failed to import fluids friction correlations: {e}",
-            "suggestion": "Install with: pip install fluids>=1.0.0"
-        })
+        return json.dumps(
+            {
+                "error": f"Failed to import fluids friction correlations: {e}",
+                "suggestion": "Install with: pip install fluids>=1.0.0",
+            }
+        )
     except Exception as e:
         logger.error(f"Error in PHE pressure drop calculation: {e}", exc_info=True)
         return json.dumps({"error": str(e)})
@@ -387,22 +385,19 @@ def _calculate_pipe_pressure_drop(
     if not FLUIDS_AVAILABLE:
         if strict:
             return json.dumps({"error": "fluids library required with strict=True"})
-        return json.dumps({
-            "error": "fluids library not available for pipe pressure drop calculations",
-            "suggestion": "Install with: pip install fluids>=1.0.0"
-        })
+        return json.dumps(
+            {
+                "error": "fluids library not available for pipe pressure drop calculations",
+                "suggestion": "Install with: pip install fluids>=1.0.0",
+            }
+        )
 
     try:
         from fluids.friction import one_phase_dP
 
         # Calculate pressure drop using fluids wrapper
         dP = one_phase_dP(
-            m=mass_flow_kg_s,
-            rho=rho,
-            mu=mu,
-            D=hydraulic_diameter_m,
-            roughness=pipe_roughness_m,
-            L=flow_length_m
+            m=mass_flow_kg_s, rho=rho, mu=mu, D=hydraulic_diameter_m, roughness=pipe_roughness_m, L=flow_length_m
         )
 
         # Calculate additional info
@@ -441,10 +436,7 @@ def _calculate_pipe_pressure_drop(
         return json.dumps(result)
 
     except ImportError as e:
-        return json.dumps({
-            "error": f"Failed to import fluids: {e}",
-            "suggestion": "Install with: pip install fluids>=1.0.0"
-        })
+        return json.dumps({"error": f"Failed to import fluids: {e}", "suggestion": "Install with: pip install fluids>=1.0.0"})
     except Exception as e:
         logger.error(f"Error in pipe pressure drop calculation: {e}", exc_info=True)
         return json.dumps({"error": str(e)})
@@ -480,10 +472,12 @@ def _calculate_shell_side_kern_pressure_drop(
     if not HT_AVAILABLE:
         if strict:
             return json.dumps({"error": "ht library required with strict=True"})
-        return json.dumps({
-            "error": "ht library not available for shell-side pressure drop calculations",
-            "suggestion": "Install with: pip install ht>=1.2.0"
-        })
+        return json.dumps(
+            {
+                "error": "ht library not available for shell-side pressure drop calculations",
+                "suggestion": "Install with: pip install ht>=1.2.0",
+            }
+        )
 
     try:
         # Import dP_Kern from ht.conv_tube_bank (NOT ht.hx!)
@@ -498,7 +492,7 @@ def _calculate_shell_side_kern_pressure_drop(
             LSpacing=baffle_spacing_m,
             pitch=tube_pitch_m,
             Do=tube_od_m,
-            NBaffles=n_baffles
+            NBaffles=n_baffles,
         )
 
         # Calculate derived quantities for reporting
@@ -537,17 +531,16 @@ def _calculate_shell_side_kern_pressure_drop(
             "notes": [
                 "Kern method calculates bundle crossflow only",
                 "Does not include window or nozzle losses",
-                "Real shell-side pressure drop may be 20-40% higher"
+                "Real shell-side pressure drop may be 20-40% higher",
             ],
         }
 
         return json.dumps(result)
 
     except ImportError as e:
-        return json.dumps({
-            "error": f"Failed to import ht.conv_tube_bank.dP_Kern: {e}",
-            "suggestion": "Install with: pip install ht>=1.2.0"
-        })
+        return json.dumps(
+            {"error": f"Failed to import ht.conv_tube_bank.dP_Kern: {e}", "suggestion": "Install with: pip install ht>=1.2.0"}
+        )
     except Exception as e:
         logger.error(f"Error in shell-side pressure drop calculation: {e}", exc_info=True)
         return json.dumps({"error": str(e)})
