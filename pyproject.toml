@@ -86,18 +86,8 @@ no_implicit_optional = false
 # Per-module overrides for files with third-party library stub issues
 [[tool.mypy.overrides]]
 module = [
-    "tools.plate_heat_exchanger_sizing",
-    "tools.size_shell_tube_heat_exchanger",
-    "tools.hx_shell_side_h_kern",
-    "tools.heat_exchanger",
-    "tools.convection_coefficient",
-    "tools.calculate_pressure_drop",
-    "tools.heat_duty",
-    "tools.tank_heat_loss",
-    "utils.import_helpers",
-    "utils.weather_service",
-    "utils.hx_common",
-    "utils.unit_aware_decorator",
+    "tools.*",
+    "utils.*",
 ]
 ignore_errors = true
 

@@ -49,7 +49,7 @@ jobs:
     
     - name: Type check with mypy
       run: |
-        mypy server.py --ignore-missing-imports --allow-untyped-defs
+        mypy server.py
     
     - name: Test server startup
       run: |
