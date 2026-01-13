@@ -19,10 +19,10 @@ def calculate_buried_object_heat_loss(
     object_type: str,
     diameter: float,
     length: Optional[float] = None,
-    burial_depth: float = None,
-    soil_conductivity: float = None,
-    object_temperature: float = None,
-    ground_surface_temperature: float = None,
+    burial_depth: Optional[float] = None,
+    soil_conductivity: Optional[float] = None,
+    object_temperature: Optional[float] = None,
+    ground_surface_temperature: Optional[float] = None,
 ) -> str:
     """Calculates buried object heat loss using shape factors.
 

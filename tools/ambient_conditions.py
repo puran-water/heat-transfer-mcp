@@ -20,8 +20,8 @@ def get_ambient_conditions(
     longitude: Optional[float] = None,
     elevation: Optional[float] = None,
     location_name: Optional[str] = None,
-    start_date: str = None,
-    end_date: str = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     time_resolution: str = "daily",
     parameters: List[str] = ["tavg", "wspd", "pres", "rhum", "tsun"],
 ) -> str:

@@ -106,7 +106,7 @@ def detect_unit_type(value: str) -> Optional[str]:
     return None
 
 
-def convert_value(value: Any, param_type: str, param_name: str = None, fluid_density: Optional[float] = None) -> Any:
+def convert_value(value: Any, param_type: str, param_name: Optional[str] = None, fluid_density: Optional[float] = None) -> Any:
     """Convert a single value based on parameter type.
 
     Args:

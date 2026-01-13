@@ -24,9 +24,9 @@ def calculate_ground_heat_loss(
     insulation_R_value_si: float = 0.0,
     wall_thickness: float = 0.2,
     wall_conductivity: float = 1.7,
-    soil_conductivity: float = None,
-    internal_temperature: float = None,
-    average_external_air_temperature: float = None,
+    soil_conductivity: Optional[float] = None,
+    internal_temperature: Optional[float] = None,
+    average_external_air_temperature: Optional[float] = None,
     internal_convection_coefficient_h: float = 8.0,
 ) -> str:
     """Estimates ground heat loss using simplified methods/shape factors.

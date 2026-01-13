@@ -100,7 +100,7 @@ for tool in OMNIBUS_TOOLS + TOOLS:
         mcp.tool()(unit_aware_tool)
     else:
         # Register original tool
-        mcp.tool()(tool)
+        mcp.tool()(tool)  # type: ignore[arg-type]
         logger.info(f"Registered {tool.__name__} (SI units only)")
 
 # Log information about available dependencies
