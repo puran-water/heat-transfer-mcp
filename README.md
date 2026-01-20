@@ -8,7 +8,7 @@
 [![CoolProp](https://img.shields.io/badge/CoolProp-Optional-lightgrey)](http://www.coolprop.org/)
 [![Meteostat](https://img.shields.io/badge/Meteostat-1.6.8-orange)](https://meteostat.net)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Production-success)](https://github.com/puran-water/heat-transfer-mcp)
+[![Status](https://img.shields.io/badge/Status-In%20Development-yellow)](https://github.com/puran-water/heat-transfer-mcp)
 
 Model Context Protocol server providing comprehensive heat transfer and thermal system analysis for industrial process engineering.
 
