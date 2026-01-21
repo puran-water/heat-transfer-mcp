@@ -693,7 +693,11 @@ def size_shell_tube_heat_exchanger(
                     Re_shell_tb = rho_shell * V_max * tube_outer_diameter_m / mu_shell
                     Re_shell = Re_shell_tb  # Alias for consistent use in dP_Zukauskas
                     Nu_shell = Nu_Zukauskas_Bejan(
-                        Re=Re_shell_tb, Pr=Pr_shell, tube_rows=tube_rows, pitch_parallel=tube_pitch_m, pitch_normal=tube_pitch_m
+                        Re=Re_shell_tb,
+                        Pr=Pr_shell,
+                        tube_rows=tube_rows,
+                        pitch_parallel=tube_pitch_m,
+                        pitch_normal=tube_pitch_m,
                     )
                     # For tube-bank correlations, h = Nu * k / Do (tube outer diameter)
                     h_shell = Nu_shell * k_shell / tube_outer_diameter_m
@@ -866,7 +870,11 @@ def size_shell_tube_heat_exchanger(
                             "pressure_drop_shell_Pa": dP_shell,
                             "pressure_drop_shell_kPa": dP_shell / 1000,
                             "correlation_tube_dP": "fluids.one_phase_dP",
-                            "correlation_shell_dP": "ht.conv_tube_bank.dP_Zukauskas" if shell_side_method == "Zukauskas" else "ht.conv_tube_bank.dP_Kern",
+                            "correlation_shell_dP": (
+                                "ht.conv_tube_bank.dP_Zukauskas"
+                                if shell_side_method == "Zukauskas"
+                                else "ht.conv_tube_bank.dP_Kern"
+                            ),
                             "shell_cross_flow_area_m2": A_shell,
                             "equivalent_diameter_shell_m": De_shell,
                         },

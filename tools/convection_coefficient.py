@@ -46,8 +46,18 @@ def _get_thermal_expansion_coefficient(
     """
     # List of common gases where ideal gas approximation is valid
     gas_names = {
-        "air", "nitrogen", "oxygen", "hydrogen", "helium", "argon",
-        "carbon_dioxide", "co2", "methane", "natural_gas", "steam", "biogas"
+        "air",
+        "nitrogen",
+        "oxygen",
+        "hydrogen",
+        "helium",
+        "argon",
+        "carbon_dioxide",
+        "co2",
+        "methane",
+        "natural_gas",
+        "steam",
+        "biogas",
     }
 
     fluid_lower = fluid_name.lower().replace(" ", "_").replace("-", "_")
@@ -62,6 +72,7 @@ def _get_thermal_expansion_coefficient(
     # For liquids, try to get beta from property library
     try:
         from thermo import Chemical
+
         chem = Chemical(fluid_name, T=temperature_K, P=pressure_Pa)
 
         # thermo provides isobaric_expansion_coefficient for some fluids
@@ -647,9 +658,7 @@ def calculate_convection_coefficient(
 
                     g = 9.81  # m/s²
                     # Get thermal expansion coefficient (beta) - use proper value for liquids
-                    beta, is_approx, beta_warning = _get_thermal_expansion_coefficient(
-                        fluid_name, film_temperature, pressure
-                    )
+                    beta, is_approx, beta_warning = _get_thermal_expansion_coefficient(fluid_name, film_temperature, pressure)
                     if beta_warning:
                         logger.warning(beta_warning)
                     delta_t = abs(surface_temperature - bulk_fluid_temperature)
@@ -726,9 +735,7 @@ def calculate_convection_coefficient(
 
                     g = 9.81
                     # Get thermal expansion coefficient (beta) - use proper value for liquids
-                    beta, is_approx, beta_warning = _get_thermal_expansion_coefficient(
-                        fluid_name, film_temperature, pressure
-                    )
+                    beta, is_approx, beta_warning = _get_thermal_expansion_coefficient(fluid_name, film_temperature, pressure)
                     if beta_warning:
                         logger.warning(beta_warning)
                     delta_t = abs(surface_temperature - bulk_fluid_temperature)

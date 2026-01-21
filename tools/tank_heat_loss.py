@@ -782,7 +782,7 @@ def tank_heat_loss(
                 # Calculate chord width for interface area (rectangular interface for horizontal tanks)
                 # chord_width = 2 * sqrt(r² - (r - h)²) where h is liquid level
                 if liquid_level > 0 and liquid_level < diameter:
-                    chord_width = 2 * math.sqrt(radius**2 - (radius - liquid_level)**2)
+                    chord_width = 2 * math.sqrt(radius**2 - (radius - liquid_level) ** 2)
                 elif liquid_level >= diameter:
                     chord_width = 0.0  # Full tank, no interface
                 else:

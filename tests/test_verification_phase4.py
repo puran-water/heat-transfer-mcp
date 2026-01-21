@@ -221,9 +221,9 @@ class TestTubeBankValidation:
 
             # Verify the dP correlation is reported correctly
             hydraulic = result["hydraulic"]
-            assert "Zukauskas" in hydraulic["correlation_shell_dP"], (
-                f"Shell dP correlation should be dP_Zukauskas, got: {hydraulic['correlation_shell_dP']}"
-            )
+            assert (
+                "Zukauskas" in hydraulic["correlation_shell_dP"]
+            ), f"Shell dP correlation should be dP_Zukauskas, got: {hydraulic['correlation_shell_dP']}"
 
             # h should be reasonable for tube bank
             # For water at high velocities, h can reach 20000-30000 W/m²K
@@ -313,9 +313,9 @@ class TestPHEPortLoss:
         expected_port_loss = 1.4 * 0.5 * rho * v_port**2  # Pa
 
         # Allow 20% tolerance for property variations
-        assert abs(port_loss_Pa - expected_port_loss) / expected_port_loss < 0.2, (
-            f"Port loss mismatch: got {port_loss_Pa:.1f} Pa, expected ~{expected_port_loss:.1f} Pa"
-        )
+        assert (
+            abs(port_loss_Pa - expected_port_loss) / expected_port_loss < 0.2
+        ), f"Port loss mismatch: got {port_loss_Pa:.1f} Pa, expected ~{expected_port_loss:.1f} Pa"
 
     def test_port_loss_scaling(self):
         """Verify port loss scales with velocity squared."""
@@ -417,9 +417,9 @@ class TestHelperFallback:
         expected_ratio = 8.0 ** (1 / 3)  # ≈ 2.0
         actual_ratio = Nu_Pr8 / Nu_Pr1 if Nu_Pr1 > 0 else 0
 
-        assert abs(actual_ratio - expected_ratio) < 0.01, (
-            f"Pr scaling incorrect: Nu_Pr8/Nu_Pr1 = {actual_ratio:.3f}, expected {expected_ratio:.3f}"
-        )
+        assert (
+            abs(actual_ratio - expected_ratio) < 0.01
+        ), f"Pr scaling incorrect: Nu_Pr8/Nu_Pr1 = {actual_ratio:.3f}, expected {expected_ratio:.3f}"
 
 
 class TestConvergenceFlagAccuracy:
