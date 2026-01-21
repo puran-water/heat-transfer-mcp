@@ -184,15 +184,72 @@ def pipe_heat_management(
         else:
             if burial_depth_m is None or soil_conductivity_w_mk is None:
                 return json.dumps({"error": "burial_depth_m and soil_conductivity_w_mk required for buried"})
-            # Use contents temperature as outer surface proxy (conservative upper bound)
+
+            # Calculate outer surface temperature considering wall layers (insulation)
+            # For buried pipes, heat flows: internal fluid -> wall layers -> soil -> ground surface
+            # We need to iteratively solve for the outer surface temperature
+
+            # Calculate total R-value per unit length through wall layers (cylindrical geometry)
+            R_wall_per_m = 0.0  # m·K/W (resistance per meter of pipe length)
+            r_current = outer_diameter_m / 2.0  # Start from outer diameter going inward
+
+            if wall_layers:
+                # Process layers from outside to inside (reverse order for resistance calculation)
+                for layer in reversed(wall_layers):
+                    thickness = layer.get("thickness", 0.0)
+                    k_layer = layer.get("thermal_conductivity_k", layer.get("k", 0.035))  # Default insulation k
+                    if thickness > 0 and k_layer > 0:
+                        r_inner_layer = r_current - thickness
+                        if r_inner_layer > 0:
+                            # Cylindrical resistance: R = ln(r_outer/r_inner) / (2*pi*k) per unit length
+                            R_wall_per_m += math.log(r_current / r_inner_layer) / (2 * math.pi * k_layer)
+                            r_current = r_inner_layer
+
+            # Iterative solution: find outer surface temp that balances heat flow
+            T_internal = float(internal_temperature_K)
+            T_ground = float(ground_surface_temperature_K or ambient_air_temperature_K)
+            T_surface_guess = T_internal  # Start with internal temp (conservative)
+
+            # If no wall layers, use internal temperature directly (original behavior)
+            if R_wall_per_m > 1e-9:
+                # Iterate to find consistent outer surface temperature
+                for _ in range(20):  # Usually converges in <10 iterations
+                    # Calculate heat loss with current surface temp guess
+                    obj_json_iter = calculate_buried_object_heat_loss(
+                        object_type="pipe",
+                        diameter=float(outer_diameter_m),
+                        length=float(length_m),
+                        burial_depth=float(burial_depth_m),
+                        soil_conductivity=float(soil_conductivity_w_mk),
+                        object_temperature=float(T_surface_guess),
+                        ground_surface_temperature=T_ground,
+                    )
+                    obj_iter = json.loads(obj_json_iter)
+                    if "error" in obj_iter:
+                        break
+                    q_soil = obj_iter.get("total_heat_loss_watts", 0.0)
+                    q_per_m = q_soil / float(length_m)
+
+                    # New surface temp: T_surface = T_internal - Q/m * R_wall
+                    T_surface_new = T_internal - q_per_m * R_wall_per_m
+
+                    # Check convergence
+                    if abs(T_surface_new - T_surface_guess) < 0.01:  # 0.01 K tolerance
+                        T_surface_guess = T_surface_new
+                        break
+
+                    # Damped update for stability
+                    T_surface_guess = 0.5 * T_surface_guess + 0.5 * T_surface_new
+
+            # Final calculation with converged surface temperature
             obj_json = calculate_buried_object_heat_loss(
                 object_type="pipe",
                 diameter=float(outer_diameter_m),
                 length=float(length_m),
                 burial_depth=float(burial_depth_m),
                 soil_conductivity=float(soil_conductivity_w_mk),
-                object_temperature=float(internal_temperature_K),
-                ground_surface_temperature=float(ground_surface_temperature_K or ambient_air_temperature_K),
+                object_temperature=float(T_surface_guess),
+                ground_surface_temperature=T_ground,
             )
             obj = json.loads(obj_json)
             if "error" in obj:
@@ -201,6 +258,10 @@ def pipe_heat_management(
             q_loss_w_m = q_total / float(length_m)
             result["heat_loss_per_length_w_m"] = q_loss_w_m
             result["buried_details"] = obj
+            result["buried_details"]["outer_surface_temperature_K"] = T_surface_guess
+            result["buried_details"]["wall_R_value_per_m_mK_W"] = R_wall_per_m
+            if R_wall_per_m > 1e-9:
+                result["buried_details"]["note"] = "Outer surface temp computed iteratively considering wall/insulation layers"
 
         # Common helper: recompute steady-state loss at a target temperature
         def _steady_state_loss_at_temperature(temp_K: float) -> Dict[str, Any]:
@@ -220,14 +281,41 @@ def pipe_heat_management(
                     "details": surf_t.get("details"),
                 }
             else:
+                # For buried pipes, use iterative solution considering wall layers
+                T_internal_t = float(temp_K)
+                T_surface_t = T_internal_t
+
+                if R_wall_per_m > 1e-9:
+                    # Iterate to find consistent outer surface temperature
+                    for _ in range(20):
+                        obj_json_iter = calculate_buried_object_heat_loss(
+                            object_type="pipe",
+                            diameter=float(outer_diameter_m),
+                            length=float(length_m),
+                            burial_depth=float(burial_depth_m),
+                            soil_conductivity=float(soil_conductivity_w_mk),
+                            object_temperature=float(T_surface_t),
+                            ground_surface_temperature=T_ground,
+                        )
+                        obj_iter = json.loads(obj_json_iter)
+                        if "error" in obj_iter:
+                            break
+                        q_soil_t = obj_iter.get("total_heat_loss_watts", 0.0)
+                        q_per_m_t = q_soil_t / float(length_m)
+                        T_surface_new = T_internal_t - q_per_m_t * R_wall_per_m
+                        if abs(T_surface_new - T_surface_t) < 0.01:
+                            T_surface_t = T_surface_new
+                            break
+                        T_surface_t = 0.5 * T_surface_t + 0.5 * T_surface_new
+
                 obj_json_t = calculate_buried_object_heat_loss(
                     object_type="pipe",
                     diameter=float(outer_diameter_m),
                     length=float(length_m),
                     burial_depth=float(burial_depth_m),
                     soil_conductivity=float(soil_conductivity_w_mk),
-                    object_temperature=float(temp_K),
-                    ground_surface_temperature=float(ground_surface_temperature_K or ambient_air_temperature_K),
+                    object_temperature=float(T_surface_t),
+                    ground_surface_temperature=T_ground,
                 )
                 obj_t = json.loads(obj_json_t)
                 if "error" in obj_t:
@@ -393,19 +481,43 @@ def pipe_heat_management(
                 sensible = mass_per_m * cp * max(0.0, float(internal_temperature_K) - float(freeze_temperature_K))
                 latent = mass_per_m * float(latent_heat_j_kg) if include_latent_heat else 0.0
                 energy_j = sensible + latent
-                q_net = max(1e-6, result["heat_loss_per_length_w_m"] - float(heat_trace_w_per_m))  # W/m
-                t_s = energy_j / q_net
-                result.update(
-                    {
-                        "mode": "solve_for",
-                        "solve_for": s,
-                        "freeze_time_hours": t_s / 3600.0,
-                        "assumptions": {
-                            "includes_latent": include_latent_heat,
-                            "net_loss_w_per_m": q_net,
-                        },
-                    }
-                )
+                q_loss = result["heat_loss_per_length_w_m"]
+                q_trace = float(heat_trace_w_per_m)
+                q_net = q_loss - q_trace  # W/m (positive = net heat loss)
+
+                # Check if heat trace exceeds or equals heat loss (no freeze risk)
+                if q_net <= 0:
+                    result.update(
+                        {
+                            "mode": "solve_for",
+                            "solve_for": s,
+                            "freeze_risk": False,
+                            "freeze_time_hours": None,
+                            "message": "Heat trace power exceeds or equals heat loss - no freeze risk under these conditions",
+                            "assumptions": {
+                                "includes_latent": include_latent_heat,
+                                "heat_loss_w_per_m": q_loss,
+                                "heat_trace_w_per_m": q_trace,
+                                "net_loss_w_per_m": q_net,
+                            },
+                        }
+                    )
+                else:
+                    t_s = energy_j / q_net
+                    result.update(
+                        {
+                            "mode": "solve_for",
+                            "solve_for": s,
+                            "freeze_risk": True,
+                            "freeze_time_hours": t_s / 3600.0,
+                            "assumptions": {
+                                "includes_latent": include_latent_heat,
+                                "heat_loss_w_per_m": q_loss,
+                                "heat_trace_w_per_m": q_trace,
+                                "net_loss_w_per_m": q_net,
+                            },
+                        }
+                    )
             elif s == "r_value":
                 return json.dumps({"error": "R_value solve not yet implemented for pipe_heat_management"})
             else:

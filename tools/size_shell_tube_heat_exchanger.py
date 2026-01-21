@@ -519,9 +519,25 @@ def size_shell_tube_heat_exchanger(
         )
 
         # Calculate LMTD correction factor for multi-pass
+        # Note: F_LMTD_Fakheri is for shell-and-tube HX with 2N tube passes per shell pass
+        # Standard configurations: 1 shell + 2/4/6 tube passes, 2 shells + 4/8/12 tube passes, etc.
         F_correction = 1.0
         try:
             from ht.hx import F_LMTD_Fakheri
+
+            # Validate tube passes for Fakheri correlation
+            # The correlation assumes tube passes = 2 * shells * N for some integer N
+            # Warn if using non-standard configurations
+            if n_tube_passes < 2 * n_shell_passes:
+                logger.warning(
+                    f"F_LMTD_Fakheri: n_tube_passes ({n_tube_passes}) < 2 * n_shell_passes ({n_shell_passes}). "
+                    "This is a non-standard configuration; F correction may be inaccurate."
+                )
+            elif n_tube_passes % (2 * n_shell_passes) != 0:
+                logger.warning(
+                    f"F_LMTD_Fakheri: n_tube_passes ({n_tube_passes}) is not a multiple of 2 * n_shell_passes ({2 * n_shell_passes}). "
+                    "Standard configurations are 2, 4, 6... tube passes per shell. F correction may be inaccurate."
+                )
 
             F_correction = F_LMTD_Fakheri(
                 Tci=cold_inlet_temp_K,
@@ -703,8 +719,9 @@ def size_shell_tube_heat_exchanger(
                 # Pressure drops - use fluids/ht library functions exclusively
                 # Tube-side: using fluids library (no fallback)
                 # Total tube length = tube_length * n_passes
+                # Note: one_phase_dP expects mass flow through a SINGLE tube, not total
                 dP_tube = one_phase_dP(
-                    m=tube_flow,
+                    m=tube_flow / tubes_per_pass,  # Per-tube mass flow
                     rho=rho_tube,
                     mu=mu_tube,
                     D=tube_inner_diameter_m,

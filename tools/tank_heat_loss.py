@@ -706,31 +706,101 @@ def tank_heat_loss(
 
         # Standard single evaluation (no sweep/no solve)
         # Check if headspace modeling is needed
-        if headspace_height_m > 0 and "cylinder_tank" in geometry.lower():
-            # Headspace modeling - split tank into zones
+        geometry_lower = geometry.lower()
+        if headspace_height_m > 0 and "cylinder_tank" in geometry_lower:
             diameter = dimensions.get("diameter", 0)
-            height = dimensions.get("height", dimensions.get("length", 0))
-            if headspace_height_m >= height:
-                return json.dumps({"error": "headspace_height_m must be less than total height/length"})
+            is_horizontal = "horizontal" in geometry_lower
 
-            # Calculate zone areas
-            liquid_height = max(0, height - headspace_height_m)
+            if is_horizontal:
+                # HORIZONTAL CYLINDER: headspace_height_m represents the empty vertical
+                # height within the circular cross-section (distance from liquid surface to top)
+                # Note: For horizontal tanks, "headspace_height_m" is the vertical distance
+                # from the liquid surface to the top of the tank (not an axial dimension)
+                tank_length = dimensions.get("length", dimensions.get("height", 0))
+                radius = diameter / 2.0
 
-            # Wetted wall area (in contact with liquid)
-            wetted_wall_area = math.pi * diameter * liquid_height
+                if headspace_height_m >= diameter:
+                    return json.dumps({"error": "headspace_height_m must be less than diameter for horizontal tanks"})
 
-            # Dry wall area (in contact with gas)
-            dry_wall_area = math.pi * diameter * headspace_height_m
+                # Liquid level measured from bottom of tank
+                liquid_level = diameter - headspace_height_m
 
-            # Roof area (top endcap)
-            roof_area = math.pi * (diameter / 2) ** 2
+                # Calculate wetted/dry arc lengths using circular segment geometry
+                # liquid_level is the height of liquid from bottom
+                if liquid_level >= diameter:
+                    # Completely full - no headspace
+                    wetted_arc_fraction = 1.0
+                elif liquid_level <= 0:
+                    # Completely empty
+                    wetted_arc_fraction = 0.0
+                else:
+                    # Partial fill: calculate wetted arc using angle
+                    # h = liquid level from bottom, r = radius
+                    # For liquid at height h: theta = 2 * acos((r - h) / r)
+                    # where theta is the central angle subtended by the liquid surface
+                    h = liquid_level
+                    r = radius
+                    # Wetted angle (angle from center to liquid surface chord)
+                    theta_wetted = 2 * math.acos(max(-1, min(1, (r - h) / r)))
+                    wetted_arc_fraction = theta_wetted / (2 * math.pi)
 
-            # Bottom area (always wetted)
-            bottom_area = math.pi * (diameter / 2) ** 2
+                dry_arc_fraction = 1.0 - wetted_arc_fraction
 
-            # Total areas for each zone
-            wetted_total_area = wetted_wall_area + bottom_area
-            dry_total_area = dry_wall_area + roof_area
+                # Wall areas (circumference × length × fraction)
+                wetted_wall_area = math.pi * diameter * tank_length * wetted_arc_fraction
+                dry_wall_area = math.pi * diameter * tank_length * dry_arc_fraction
+
+                # End caps - each has wetted and dry portions (circular segments)
+                # Wetted segment area = r² * (theta - sin(theta)) / 2
+                if liquid_level >= diameter:
+                    wetted_endcap_area = math.pi * radius**2
+                    dry_endcap_area = 0.0
+                elif liquid_level <= 0:
+                    wetted_endcap_area = 0.0
+                    dry_endcap_area = math.pi * radius**2
+                else:
+                    theta_wetted = 2 * math.acos(max(-1, min(1, (radius - liquid_level) / radius)))
+                    wetted_endcap_area = radius**2 * (theta_wetted - math.sin(theta_wetted)) / 2
+                    dry_endcap_area = math.pi * radius**2 - wetted_endcap_area
+
+                # Two endcaps
+                wetted_total_area = wetted_wall_area + 2 * wetted_endcap_area
+                dry_total_area = dry_wall_area + 2 * dry_endcap_area
+
+                # For horizontal tanks, use flat_surface geometry for approximate heat loss
+                # since the wetted/dry zones wrap around the circumference
+                wetted_dims = {"length": tank_length, "width": wetted_wall_area / tank_length if tank_length > 0 else 0}
+                dry_dims = {"length": tank_length, "width": dry_wall_area / tank_length if tank_length > 0 else 0}
+                zone_geometry = "flat_surface"  # Approximation for horizontal tank zones
+
+            else:
+                # VERTICAL CYLINDER: headspace_height_m is axial height of gas space at top
+                height = dimensions.get("height", dimensions.get("length", 0))
+                if headspace_height_m >= height:
+                    return json.dumps({"error": "headspace_height_m must be less than total height/length"})
+
+                # Calculate zone areas
+                liquid_height = max(0, height - headspace_height_m)
+
+                # Wetted wall area (in contact with liquid)
+                wetted_wall_area = math.pi * diameter * liquid_height
+
+                # Dry wall area (in contact with gas)
+                dry_wall_area = math.pi * diameter * headspace_height_m
+
+                # Roof area (top endcap)
+                roof_area = math.pi * (diameter / 2) ** 2
+
+                # Bottom area (always wetted)
+                bottom_area = math.pi * (diameter / 2) ** 2
+
+                # Total areas for each zone
+                wetted_total_area = wetted_wall_area + bottom_area
+                dry_total_area = dry_wall_area + roof_area
+
+                wetted_dims = {"diameter": diameter, "height": liquid_height}
+                dry_dims = {"diameter": diameter, "height": headspace_height_m}
+                zone_geometry = "vertical_cylinder_tank"
 
             # Estimate gas temperature (simple weighted average for now)
             # More sophisticated: solve energy balance in gas space
@@ -742,9 +812,8 @@ def tank_heat_loss(
             )  # W/m²K for stagnant gas
 
             # Calculate wetted zone heat loss
-            wetted_dims = {"diameter": diameter, "height": liquid_height}
             wetted_data = _run_surface_solver(
-                geometry="vertical_cylinder_tank",
+                geometry=zone_geometry,
                 dimensions=wetted_dims,
                 internal_temperature=contents_temperature,
                 surface_emissivity=surface_emissivity,
@@ -757,11 +826,10 @@ def tank_heat_loss(
 
             # Calculate dry zone heat loss (roof + dry wall)
             # Need to modify internal h for this zone
-            dry_dims = {"diameter": diameter, "height": headspace_height_m}
             # Create modified wall layers with adjusted inner h
             # This is approximate - ideally we'd pass h_inner to surface solver
             dry_data = _run_surface_solver(
-                geometry="vertical_cylinder_tank",
+                geometry=zone_geometry,
                 dimensions=dry_dims,
                 internal_temperature=gas_temp_K,  # Use gas temperature
                 surface_emissivity=surface_emissivity,

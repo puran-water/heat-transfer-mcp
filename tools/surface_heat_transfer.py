@@ -87,18 +87,21 @@ def calculate_surface_heat_transfer(
         length = dimensions.get("length")
         width = dimensions.get("width")
 
-        if ("cylinder_tank" in geometry_lower or "tank" in geometry_lower) and diameter and height:
+        if ("cylinder_tank" in geometry_lower or "tank" in geometry_lower) and diameter and (height or length):
             if "vertical" in geometry_lower:
                 # Vertical cylinder tanks: walls + top cap only (bottom is ground-contact)
-                lateral_area = math.pi * diameter * height
+                axial_dim = height if height else length  # height is preferred for vertical
+                lateral_area = math.pi * diameter * axial_dim
                 top_area = math.pi * (diameter / 2) ** 2
                 outer_surface_area = lateral_area + top_area
             elif "horizontal" in geometry_lower:
-                # Horizontal cylinder
-                outer_surface_area = math.pi * diameter * length + 2 * math.pi * (diameter / 2) ** 2
+                # Horizontal cylinder - use length (or height as fallback)
+                axial_dim = length if length else height
+                outer_surface_area = math.pi * diameter * axial_dim + 2 * math.pi * (diameter / 2) ** 2
             else:
                 # Default to vertical if not specified - includes both endcaps
-                outer_surface_area = math.pi * diameter * height + 2 * math.pi * (diameter / 2) ** 2
+                axial_dim = height if height else length
+                outer_surface_area = math.pi * diameter * axial_dim + 2 * math.pi * (diameter / 2) ** 2
         elif "flat_surface" in geometry_lower or "wall" in geometry_lower:
             if length and width:
                 outer_surface_area = length * width

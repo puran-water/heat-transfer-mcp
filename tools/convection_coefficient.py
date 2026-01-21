@@ -576,6 +576,19 @@ def calculate_convection_coefficient(
                         kwargs.update({"Di": characteristic_dimension, "x": pipe_length})
                     nusselt_number = Nu_conv_internal(reynolds_number, prandtl_number, **kwargs)
 
+                elif "vertical" in geometry_lower and "cylinder" in geometry_lower and flow_type.lower() == "natural":
+                    # Vertical cylinder natural convection - use proper vertical cylinder correlation
+                    from ht.conv_free_immersed import Nu_vertical_cylinder
+
+                    g = 9.81  # m/s²
+                    # Note: beta = 1/T is only valid for ideal gases. For liquids, this is an approximation.
+                    # See documentation for limitations with liquid natural convection.
+                    beta = 1.0 / film_temperature  # Thermal expansion coefficient (ideal gas approximation)
+                    delta_t = abs(surface_temperature - bulk_fluid_temperature)
+                    kinematic_viscosity = dynamic_viscosity / density
+                    grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
+                    nusselt_number = Nu_vertical_cylinder(prandtl_number, grashof, L=characteristic_dimension)
+
                 elif "pipe_external" in geometry_lower or "cylinder" in geometry_lower:
                     if flow_type.lower() == "forced":
                         # Use ht.conv_external meta-function for cylinder; include wall Pr if available
@@ -598,13 +611,14 @@ def calculate_convection_coefficient(
                             nusselt_number = Nu_external_cylinder(reynolds_number, prandtl_number, Prw=prandtl_wall)
                         else:
                             nusselt_number = Nu_external_cylinder(reynolds_number, prandtl_number)
-                    else:  # Natural convection
-                        # Use ht.conv_free_immersed for natural convection around cylinder
+                    else:  # Natural convection for horizontal cylinders
+                        # Use ht.conv_free_immersed for natural convection around horizontal cylinder
                         from ht.conv_free_immersed import Nu_horizontal_cylinder
 
                         # Calculate Grashof number for ht function
                         g = 9.81  # m/s²
-                        beta = 1.0 / film_temperature  # Thermal expansion coefficient (approximation)
+                        # Note: beta = 1/T is only valid for ideal gases. For liquids, this is an approximation.
+                        beta = 1.0 / film_temperature  # Thermal expansion coefficient (ideal gas approximation)
                         delta_t = abs(surface_temperature - bulk_fluid_temperature)
                         kinematic_viscosity = dynamic_viscosity / density
                         grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
@@ -623,7 +637,8 @@ def calculate_convection_coefficient(
                         from ht.conv_free_immersed import Nu_sphere_Churchill
 
                         g = 9.81
-                        beta = 1.0 / film_temperature
+                        # Note: beta = 1/T is only valid for ideal gases. For liquids, this is an approximation.
+                        beta = 1.0 / film_temperature  # Thermal expansion coefficient (ideal gas approximation)
                         delta_t = abs(surface_temperature - bulk_fluid_temperature)
                         kinematic_viscosity = dynamic_viscosity / density
                         grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
@@ -634,7 +649,8 @@ def calculate_convection_coefficient(
                     from ht.conv_free_immersed import Nu_free_vertical_plate
 
                     g = 9.81
-                    beta = 1.0 / film_temperature
+                    # Note: beta = 1/T is only valid for ideal gases. For liquids, this is an approximation.
+                    beta = 1.0 / film_temperature  # Thermal expansion coefficient (ideal gas approximation)
                     delta_t = abs(surface_temperature - bulk_fluid_temperature)
                     kinematic_viscosity = dynamic_viscosity / density
                     grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
@@ -646,7 +662,8 @@ def calculate_convection_coefficient(
                     else:  # Natural
                         # Basic natural convection for various geometries
                         g = 9.81
-                        beta = 1.0 / film_temperature
+                        # Note: beta = 1/T is only valid for ideal gases. For liquids, this is an approximation.
+                        beta = 1.0 / film_temperature  # Thermal expansion coefficient (ideal gas approximation)
                         delta_t = abs(surface_temperature - bulk_fluid_temperature)
                         kinematic_viscosity = dynamic_viscosity / density
 
@@ -707,7 +724,8 @@ def calculate_convection_coefficient(
             result["calculation_details"]["fluid_velocity"] = fluid_velocity
         else:  # Natural convection
             g = 9.81
-            beta = 1.0 / film_temperature
+            # Note: beta = 1/T is only valid for ideal gases. For liquids, this is an approximation.
+            beta = 1.0 / film_temperature  # Thermal expansion coefficient (ideal gas approximation)
             delta_t = abs(surface_temperature - bulk_fluid_temperature)
             if density and dynamic_viscosity:
                 kinematic_viscosity = dynamic_viscosity / density
