@@ -773,6 +773,22 @@ def tank_heat_loss(
                 dry_dims = {"length": tank_length, "width": dry_wall_area / tank_length if tank_length > 0 else 0}
                 zone_geometry = "flat_surface"  # Approximation for horizontal tank zones
 
+                # Define variables needed for combined results section
+                # For horizontal tanks, "roof_area" is the dry portion of end caps
+                roof_area = 2 * dry_endcap_area
+                # liquid_height for horizontal = liquid_level (vertical height in cross-section)
+                liquid_height = liquid_level
+
+                # Calculate chord width for interface area (rectangular interface for horizontal tanks)
+                # chord_width = 2 * sqrt(r² - (r - h)²) where h is liquid level
+                if liquid_level > 0 and liquid_level < diameter:
+                    chord_width = 2 * math.sqrt(radius**2 - (radius - liquid_level)**2)
+                elif liquid_level >= diameter:
+                    chord_width = 0.0  # Full tank, no interface
+                else:
+                    chord_width = 0.0  # Empty tank, no interface
+                interface_area_horizontal = chord_width * tank_length
+
             else:
                 # VERTICAL CYLINDER: headspace_height_m is axial height of gas space at top
                 height = dimensions.get("height", dimensions.get("length", 0))
@@ -855,28 +871,64 @@ def tank_heat_loss(
             wetted_rad = wetted_data.get("radiative_heat_rate_w", 0.0)
             dry_rad = dry_data.get("radiative_heat_rate_w", 0.0)
 
-            # Remove the interior gas/liquid interface contribution (not an external surface)
-            # With updated surface area logic, the interface disc is only present in the wetted zone model.
-            interface_area = math.pi * (diameter / 2) ** 2
-            wetted_area_model = max(wetted_data.get("outer_surface_area_m2", wetted_total_area), 1e-9)
-            qpp_w_total = wetted_q / wetted_area_model
-            qpp_w_conv = wetted_conv / wetted_area_model
-            qpp_w_rad = wetted_rad / wetted_area_model
+            if is_horizontal:
+                # For horizontal tanks using flat_surface approximation:
+                # 1. The model only covers wall area, not endcaps
+                # 2. No interface is included in flat_surface geometry, so no subtraction needed
+                #
+                # Scale heat loss to include endcap contribution proportionally
+                # This is an approximation: endcaps have similar U-value but different view factors
+                wetted_area_model = max(wetted_data.get("outer_surface_area_m2", wetted_wall_area), 1e-9)
+                dry_area_model = max(dry_data.get("outer_surface_area_m2", dry_wall_area), 1e-9)
 
-            total_surface_q = wetted_q + dry_q - interface_area * qpp_w_total
-            total_conv_q = wetted_conv + dry_conv - interface_area * qpp_w_conv
-            total_rad_q = wetted_rad + dry_rad - interface_area * qpp_w_rad
+                # Heat flux from each zone (W/m²)
+                qpp_w_total = wetted_q / wetted_area_model
+                qpp_w_conv = wetted_conv / wetted_area_model
+                qpp_w_rad = wetted_rad / wetted_area_model
+                qpp_d_total = dry_q / dry_area_model
+                qpp_d_conv = dry_conv / dry_area_model
+                qpp_d_rad = dry_rad / dry_area_model
 
-            # Air-exposed areas only (exclude bottom)
-            air_exposed_area = wetted_wall_area + dry_wall_area + roof_area
+                # Apply heat flux to total area including endcaps (no interface subtraction for flat_surface)
+                # Wetted zone: wetted wall + 2 wetted endcaps
+                # Dry zone: dry wall + 2 dry endcaps
+                total_surface_q = qpp_w_total * wetted_total_area + qpp_d_total * dry_total_area
+                total_conv_q = qpp_w_conv * wetted_total_area + qpp_d_conv * dry_total_area
+                total_rad_q = qpp_w_rad * wetted_total_area + qpp_d_rad * dry_total_area
+            else:
+                # Vertical cylinder: interface subtraction is appropriate
+                # The vertical_cylinder_tank model includes a top surface (interface disc)
+                # which should not contribute to external heat loss
+                interface_area = math.pi * (diameter / 2) ** 2
+                wetted_area_model = max(wetted_data.get("outer_surface_area_m2", wetted_total_area), 1e-9)
+                qpp_w_total = wetted_q / wetted_area_model
+                qpp_w_conv = wetted_conv / wetted_area_model
+                qpp_w_rad = wetted_rad / wetted_area_model
+
+                total_surface_q = wetted_q + dry_q - interface_area * qpp_w_total
+                total_conv_q = wetted_conv + dry_conv - interface_area * qpp_w_conv
+                total_rad_q = wetted_rad + dry_rad - interface_area * qpp_w_rad
+
+            # Air-exposed areas
+            if is_horizontal:
+                # Horizontal tank: all surfaces (wall + both endcaps) are air-exposed
+                air_exposed_area = wetted_total_area + dry_total_area
+                wetted_area_for_temp = wetted_total_area
+                dry_area_for_temp = dry_total_area
+            else:
+                # Vertical tank: exclude bottom (ground contact)
+                air_exposed_area = wetted_wall_area + dry_wall_area + roof_area
+                wetted_area_for_temp = wetted_wall_area
+                dry_area_for_temp = dry_wall_area + roof_area
+
             surface_data = {
                 "total_heat_rate_loss_w": total_surface_q,
                 "convective_heat_rate_w": total_conv_q,
                 "radiative_heat_rate_w": total_rad_q,
                 "solar_gain_rate_w": wetted_data.get("solar_gain_rate_w", 0) + dry_data.get("solar_gain_rate_w", 0),
                 "estimated_outer_surface_temp_k": (
-                    (wetted_data.get("estimated_outer_surface_temp_k", 0) * wetted_wall_area)
-                    + (dry_data.get("estimated_outer_surface_temp_k", 0) * (dry_wall_area + roof_area))
+                    (wetted_data.get("estimated_outer_surface_temp_k", 0) * wetted_area_for_temp)
+                    + (dry_data.get("estimated_outer_surface_temp_k", 0) * dry_area_for_temp)
                 )
                 / max(air_exposed_area, 1e-9),
                 "estimated_outer_surface_temp_c": None,  # Will calculate below
@@ -888,10 +940,10 @@ def tank_heat_loss(
                     "liquid_height_m": liquid_height,
                     "gas_temp_estimate_k": gas_temp_K,
                     "gas_temp_estimate_c": gas_temp_K - 273.15,
-                    "wetted_area_m2": wetted_wall_area,  # air-exposed wetted wall only
-                    "dry_area_m2": dry_wall_area + roof_area,
-                    "wetted_heat_loss_w": wetted_q,
-                    "dry_heat_loss_w": dry_q,
+                    "wetted_area_m2": wetted_total_area if is_horizontal else wetted_wall_area,
+                    "dry_area_m2": dry_total_area if is_horizontal else (dry_wall_area + roof_area),
+                    "wetted_heat_loss_w": qpp_w_total * wetted_total_area if is_horizontal else wetted_q,
+                    "dry_heat_loss_w": qpp_d_total * dry_total_area if is_horizontal else dry_q,
                     "h_inner_headspace_w_m2k": h_inner_headspace,
                 },
             }

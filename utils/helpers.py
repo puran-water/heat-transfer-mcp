@@ -83,7 +83,11 @@ def calculate_nusselt_number_external_flow(
             if reynolds_number < 5e5:  # Laminar
                 return 0.664 * math.sqrt(reynolds_number) * prandtl_number ** (1 / 3)
             else:
-                return 0.037 * reynolds_number**0.8 * prandtl_number ** (1 / 3)
+                # Mixed boundary layer correlation: accounts for laminar region upstream
+                # of transition point (Re_crit ≈ 5×10⁵). The -871 term corrects for
+                # the laminar contribution that's already accounted for in the 0.037 term.
+                # Correct form: Nu = (0.037*Re^0.8 - 871) * Pr^(1/3)
+                return (0.037 * reynolds_number**0.8 - 871.0) * prandtl_number ** (1 / 3)
         from ht.conv_external import Nu_external_horizontal_plate
 
         return Nu_external_horizontal_plate(reynolds_number, prandtl_number)

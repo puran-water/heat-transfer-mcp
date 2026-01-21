@@ -20,6 +20,71 @@ from tools.fluid_properties import get_fluid_properties
 logger = logging.getLogger("heat-transfer-mcp.convection_coefficient")
 
 
+def _get_thermal_expansion_coefficient(
+    fluid_name: str,
+    temperature_K: float,
+    pressure_Pa: float,
+    phase: Optional[str] = None,
+) -> tuple:
+    """Get thermal expansion coefficient (beta) for a fluid.
+
+    For ideal gases, beta = 1/T.
+    For liquids, beta should be obtained from property databases as it varies
+    significantly from the ideal gas approximation.
+
+    Args:
+        fluid_name: Name of the fluid
+        temperature_K: Temperature in Kelvin
+        pressure_Pa: Pressure in Pascals
+        phase: Fluid phase if known ('l' or 'g')
+
+    Returns:
+        Tuple of (beta, is_approximation, warning_message)
+        - beta: Thermal expansion coefficient (1/K)
+        - is_approximation: True if using ideal gas approximation for a liquid
+        - warning_message: Warning message if approximation is used for liquid
+    """
+    # List of common gases where ideal gas approximation is valid
+    gas_names = {
+        "air", "nitrogen", "oxygen", "hydrogen", "helium", "argon",
+        "carbon_dioxide", "co2", "methane", "natural_gas", "steam", "biogas"
+    }
+
+    fluid_lower = fluid_name.lower().replace(" ", "_").replace("-", "_")
+
+    # Check if it's a gas (ideal gas approximation is valid)
+    is_gas = fluid_lower in gas_names or phase == "g"
+
+    if is_gas:
+        # Ideal gas: beta = 1/T
+        return 1.0 / temperature_K, False, None
+
+    # For liquids, try to get beta from property library
+    try:
+        from thermo import Chemical
+        chem = Chemical(fluid_name, T=temperature_K, P=pressure_Pa)
+
+        # thermo provides isobaric_expansion_coefficient for some fluids
+        if hasattr(chem, "isobaric_expansion_coefficient") and chem.isobaric_expansion_coefficient is not None:
+            beta = float(chem.isobaric_expansion_coefficient)
+            return beta, False, None
+    except Exception:
+        pass
+
+    # Fallback: use ideal gas approximation with warning for liquids
+    # Common liquid beta values for reference:
+    # - Water at 20°C: 2.07e-4 /K
+    # - Water at 60°C: 5.23e-4 /K
+    # - Ideal gas at 300K: 3.33e-3 /K (16x higher than water!)
+    beta_ideal = 1.0 / temperature_K
+    warning = (
+        f"Using ideal gas approximation (beta=1/T) for '{fluid_name}' which may be a liquid. "
+        f"For liquids, thermal expansion coefficient is typically 5-50x smaller than "
+        f"ideal gas value. Natural convection results may be significantly overestimated."
+    )
+    return beta_ideal, True, warning
+
+
 def calculate_two_phase_h(
     mass_flux_kg_m2s: float,
     quality: float,
@@ -581,9 +646,12 @@ def calculate_convection_coefficient(
                     from ht.conv_free_immersed import Nu_vertical_cylinder
 
                     g = 9.81  # m/s²
-                    # Note: beta = 1/T is only valid for ideal gases. For liquids, this is an approximation.
-                    # See documentation for limitations with liquid natural convection.
-                    beta = 1.0 / film_temperature  # Thermal expansion coefficient (ideal gas approximation)
+                    # Get thermal expansion coefficient (beta) - use proper value for liquids
+                    beta, is_approx, beta_warning = _get_thermal_expansion_coefficient(
+                        fluid_name, film_temperature, pressure
+                    )
+                    if beta_warning:
+                        logger.warning(beta_warning)
                     delta_t = abs(surface_temperature - bulk_fluid_temperature)
                     kinematic_viscosity = dynamic_viscosity / density
                     grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
@@ -617,8 +685,12 @@ def calculate_convection_coefficient(
 
                         # Calculate Grashof number for ht function
                         g = 9.81  # m/s²
-                        # Note: beta = 1/T is only valid for ideal gases. For liquids, this is an approximation.
-                        beta = 1.0 / film_temperature  # Thermal expansion coefficient (ideal gas approximation)
+                        # Get thermal expansion coefficient (beta) - use proper value for liquids
+                        beta, is_approx, beta_warning = _get_thermal_expansion_coefficient(
+                            fluid_name, film_temperature, pressure
+                        )
+                        if beta_warning:
+                            logger.warning(beta_warning)
                         delta_t = abs(surface_temperature - bulk_fluid_temperature)
                         kinematic_viscosity = dynamic_viscosity / density
                         grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
@@ -637,8 +709,12 @@ def calculate_convection_coefficient(
                         from ht.conv_free_immersed import Nu_sphere_Churchill
 
                         g = 9.81
-                        # Note: beta = 1/T is only valid for ideal gases. For liquids, this is an approximation.
-                        beta = 1.0 / film_temperature  # Thermal expansion coefficient (ideal gas approximation)
+                        # Get thermal expansion coefficient (beta) - use proper value for liquids
+                        beta, is_approx, beta_warning = _get_thermal_expansion_coefficient(
+                            fluid_name, film_temperature, pressure
+                        )
+                        if beta_warning:
+                            logger.warning(beta_warning)
                         delta_t = abs(surface_temperature - bulk_fluid_temperature)
                         kinematic_viscosity = dynamic_viscosity / density
                         grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
@@ -649,8 +725,12 @@ def calculate_convection_coefficient(
                     from ht.conv_free_immersed import Nu_free_vertical_plate
 
                     g = 9.81
-                    # Note: beta = 1/T is only valid for ideal gases. For liquids, this is an approximation.
-                    beta = 1.0 / film_temperature  # Thermal expansion coefficient (ideal gas approximation)
+                    # Get thermal expansion coefficient (beta) - use proper value for liquids
+                    beta, is_approx, beta_warning = _get_thermal_expansion_coefficient(
+                        fluid_name, film_temperature, pressure
+                    )
+                    if beta_warning:
+                        logger.warning(beta_warning)
                     delta_t = abs(surface_temperature - bulk_fluid_temperature)
                     kinematic_viscosity = dynamic_viscosity / density
                     grashof = (g * beta * delta_t * characteristic_dimension**3) / (kinematic_viscosity**2)
@@ -662,8 +742,12 @@ def calculate_convection_coefficient(
                     else:  # Natural
                         # Basic natural convection for various geometries
                         g = 9.81
-                        # Note: beta = 1/T is only valid for ideal gases. For liquids, this is an approximation.
-                        beta = 1.0 / film_temperature  # Thermal expansion coefficient (ideal gas approximation)
+                        # Get thermal expansion coefficient (beta) - use proper value for liquids
+                        beta, is_approx, beta_warning = _get_thermal_expansion_coefficient(
+                            fluid_name, film_temperature, pressure
+                        )
+                        if beta_warning:
+                            logger.warning(beta_warning)
                         delta_t = abs(surface_temperature - bulk_fluid_temperature)
                         kinematic_viscosity = dynamic_viscosity / density
 

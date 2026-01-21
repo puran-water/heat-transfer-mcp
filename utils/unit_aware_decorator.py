@@ -444,6 +444,56 @@ TOOL_MAPPINGS = {
         "pipe_inner_diameter_m": "length",
         "heat_trace_w_per_m": "power",
     },
+    # Heat exchanger sizing tools
+    "size_plate_heat_exchanger": {
+        "hot_inlet_temp_K": "temperature",
+        "hot_outlet_temp_K": "temperature",
+        "cold_inlet_temp_K": "temperature",
+        "cold_outlet_temp_K": "temperature",
+        "hot_mass_flow_kg_s": "mass_flow",
+        "cold_mass_flow_kg_s": "mass_flow",
+        "heat_duty_W": "power",
+        "plate_width_m": "length",
+        "plate_length_m": "length",
+        "plate_amplitude_m": "length_small",
+        "plate_wavelength_m": "length_small",
+        "plate_thickness_m": "length_small",
+        "port_diameter_m": "length_small",
+    },
+    "size_shell_tube_heat_exchanger": {
+        "hot_inlet_temp_K": "temperature",
+        "hot_outlet_temp_K": "temperature",
+        "cold_inlet_temp_K": "temperature",
+        "cold_outlet_temp_K": "temperature",
+        "hot_mass_flow_kg_s": "mass_flow",
+        "cold_mass_flow_kg_s": "mass_flow",
+        "heat_duty_W": "power",
+        "shell_inner_diameter_m": "length",
+        "baffle_spacing_m": "length",
+        "tube_outer_diameter_m": "length_small",
+        "tube_inner_diameter_m": "length_small",
+        "tube_pitch_m": "length_small",
+        "tube_length_m": "length",
+        "tube_roughness_m": "length_small",
+    },
+    "size_double_pipe_heat_exchanger": {
+        "hot_inlet_temp_K": "temperature",
+        "hot_outlet_temp_K": "temperature",
+        "cold_inlet_temp_K": "temperature",
+        "cold_outlet_temp_K": "temperature",
+        "hot_mass_flow_kg_s": "mass_flow",
+        "cold_mass_flow_kg_s": "mass_flow",
+        "heat_duty_W": "power",
+        "inner_pipe_outer_diameter_m": "length_small",
+        "inner_pipe_inner_diameter_m": "length_small",
+        "inner_pipe_roughness_m": "length_small",
+        "outer_pipe_inner_diameter_m": "length_small",
+        "pipe_length_m": "length",
+    },
+    "extreme_conditions": {
+        # Uses lat/lon, no unit conversion needed for coordinates
+        # Temperature outputs are in K
+    },
 }
 
 

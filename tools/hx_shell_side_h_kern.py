@@ -364,6 +364,7 @@ def calculate_hx_shell_side_h_kern(
                 logger.warning(f"ht tube-bank correlation failed: {e}")
 
         # Fallback to Kern method if tube-bank correlations are not available/applicable
+        use_tube_od_for_h = False  # Track if we should use Do instead of De for h
         if Nu_s is None:
             # Warn about baffle cut applicability for Kern
             if baffle_cut_percent != 25.0:
@@ -375,9 +376,20 @@ def calculate_hx_shell_side_h_kern(
             C_kern, n_kern = 0.36, 0.55
             Nu_s = C_kern * (Re_s**n_kern) * (Pr_b ** (1.0 / 3.0)) if Re_s > 0 else 0
             correlation_used = f"Kern Approx Nu = {C_kern:.2f}*Re^{n_kern:.2f}*Pr^(1/3)"
+            # Kern method: Nu is defined on De, so use De for h
+            use_tube_od_for_h = False
+        else:
+            # Tube-bank correlations (Zukauskas-Bejan): Nu is defined on tube OD
+            use_tube_od_for_h = True
 
         # 7. Calculate h_o without viscosity correction
-        h_o_provisional = Nu_s * k_b / De if De > 0 else 0
+        # Use the appropriate length scale based on the correlation:
+        # - Kern method: Nu is based on De (shell equivalent diameter)
+        # - Tube-bank correlations: Nu is based on Do (tube outer diameter)
+        if use_tube_od_for_h:
+            h_o_provisional = Nu_s * k_b / tube_outer_diameter if tube_outer_diameter > 0 else 0
+        else:
+            h_o_provisional = Nu_s * k_b / De if De > 0 else 0
 
         # 8. Apply Viscosity Correction (if wall temp is known)
         viscosity_correction = 1.0

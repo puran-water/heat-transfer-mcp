@@ -241,7 +241,23 @@ def calculate_overall_U(
         Dict with U value and resistances
     """
     r_i = D_inner / 2
-    r_o = D_inner / 2 + wall_thickness
+
+    # Use D_outer directly if provided, otherwise calculate from wall_thickness
+    # Validate consistency if both are provided
+    r_o_from_thickness = D_inner / 2 + wall_thickness
+    r_o_from_diameter = D_outer / 2 if D_outer else r_o_from_thickness
+
+    # Check for consistency (within 1% tolerance)
+    if D_outer and wall_thickness > 0:
+        relative_diff = abs(r_o_from_diameter - r_o_from_thickness) / r_o_from_diameter
+        if relative_diff > 0.01:  # 1% tolerance
+            logger.warning(
+                f"Inconsistent geometry: D_outer/2 ({r_o_from_diameter:.6f}) != "
+                f"D_inner/2 + wall_thickness ({r_o_from_thickness:.6f}). Using D_outer."
+            )
+
+    # Prefer D_outer if provided (it's the actual physical dimension)
+    r_o = r_o_from_diameter if D_outer else r_o_from_thickness
 
     # Resistances (referenced to outer surface)
     R_conv_inner = r_o / (r_i * h_inner) if h_inner > 0 else float("inf")

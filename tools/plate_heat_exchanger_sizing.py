@@ -701,8 +701,9 @@ def size_plate_heat_exchanger(
                     v_port_hot = hot_mass_flow_kg_s / (rho_hot * A_port)
                     v_port_cold = cold_mass_flow_kg_s / (rho_cold * A_port)
                     # ~1.4 velocity heads per port pair (inlet + outlet)
-                    dP_port_hot = 1.4 * rho_hot * v_port_hot**2
-                    dP_port_cold = 1.4 * rho_cold * v_port_cold**2
+                    # Velocity head = 0.5 * rho * v^2, so total = 1.4 * 0.5 * rho * v^2
+                    dP_port_hot = 1.4 * 0.5 * rho_hot * v_port_hot**2
+                    dP_port_cold = 1.4 * 0.5 * rho_cold * v_port_cold**2
 
                 dP_total_hot = dP_friction_hot + dP_port_hot
                 dP_total_cold = dP_friction_cold + dP_port_cold

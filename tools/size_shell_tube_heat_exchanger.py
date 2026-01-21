@@ -681,20 +681,30 @@ def size_shell_tube_heat_exchanger(
 
                 # Shell-side mass velocity
                 Gs_shell = shell_flow / A_shell
-                Re_shell = De_shell * Gs_shell / mu_shell
 
                 # Shell-side Nusselt - use ht library correlations exclusively
                 tube_rows = max(5, int(math.sqrt(n_tubes)))
                 if shell_side_method == "Zukauskas":
+                    # Zukauskas/tube-bank correlations use tube OD for Re and h
+                    # V_max is the velocity through the minimum cross-sectional area
+                    # For crossflow over tube banks, V_max = V_approach * Pt / (Pt - Do)
+                    V_approach = shell_flow / (rho_shell * A_shell)
+                    V_max = V_approach * tube_pitch_m / clearance if clearance > 0 else V_approach
+                    Re_shell_tb = rho_shell * V_max * tube_outer_diameter_m / mu_shell
+                    Re_shell = Re_shell_tb  # Alias for consistent use in dP_Zukauskas
                     Nu_shell = Nu_Zukauskas_Bejan(
-                        Re=Re_shell, Pr=Pr_shell, tube_rows=tube_rows, pitch_parallel=tube_pitch_m, pitch_normal=tube_pitch_m
+                        Re=Re_shell_tb, Pr=Pr_shell, tube_rows=tube_rows, pitch_parallel=tube_pitch_m, pitch_normal=tube_pitch_m
                     )
+                    # For tube-bank correlations, h = Nu * k / Do (tube outer diameter)
+                    h_shell = Nu_shell * k_shell / tube_outer_diameter_m
                 else:  # Kern - standard textbook correlation (no ht equivalent)
                     # Kern's method: Nu = 0.36 * Re^0.55 * Pr^(1/3) * (mu/mu_w)^0.14
+                    # Re is based on De (shell equivalent diameter)
+                    Re_shell = De_shell * Gs_shell / mu_shell
                     # Wall viscosity correction omitted as approximation
                     Nu_shell = 0.36 * Re_shell**0.55 * Pr_shell ** (1 / 3)
-
-                h_shell = Nu_shell * k_shell / De_shell
+                    # For Kern method, h = Nu * k / De
+                    h_shell = Nu_shell * k_shell / De_shell
 
                 # Overall U (referenced to tube OD)
                 R_tube_inner = 1 / h_tube * (tube_outer_diameter_m / tube_inner_diameter_m)
@@ -734,6 +744,7 @@ def size_shell_tube_heat_exchanger(
                 # Shell-side: use matching pressure drop correlation
                 if shell_side_method == "Zukauskas":
                     # Use dP_Zukauskas to match Nu_Zukauskas_Bejan
+                    # V_max was computed earlier for Re_shell calculation
                     dP_shell = dP_Zukauskas(
                         Re=Re_shell,
                         n=tube_rows,
@@ -741,7 +752,7 @@ def size_shell_tube_heat_exchanger(
                         SL=tube_pitch_m,  # Longitudinal pitch
                         D=tube_outer_diameter_m,
                         rho=rho_shell,
-                        Vmax=v_shell,
+                        Vmax=V_max,  # Use V_max computed for tube bank, not v_shell
                     )
                 else:  # Kern method
                     # Use dP_Kern to match Kern Nusselt correlation
@@ -855,7 +866,7 @@ def size_shell_tube_heat_exchanger(
                             "pressure_drop_shell_Pa": dP_shell,
                             "pressure_drop_shell_kPa": dP_shell / 1000,
                             "correlation_tube_dP": "fluids.one_phase_dP",
-                            "correlation_shell_dP": "ht.conv_tube_bank.dP_Kern",
+                            "correlation_shell_dP": "ht.conv_tube_bank.dP_Zukauskas" if shell_side_method == "Zukauskas" else "ht.conv_tube_bank.dP_Kern",
                             "shell_cross_flow_area_m2": A_shell,
                             "equivalent_diameter_shell_m": De_shell,
                         },

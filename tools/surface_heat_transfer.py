@@ -262,7 +262,14 @@ def calculate_surface_heat_transfer(
                 T_eff_radiation = T_eff4_combined**0.25
             else:
                 # Simple case - single view factor
-                view_factor_sky = view_factor_sky_horizontal if "horizontal" in geometry_lower else view_factor_sky_vertical
+                # For horizontal cylinders, use ~0.5 (top half sees sky, bottom half sees ground)
+                # For horizontal flat surfaces (roofs), use view_factor_sky_horizontal (default 1.0)
+                if "horizontal" in geometry_lower and "cylinder" in geometry_lower:
+                    view_factor_sky = 0.5  # Average for cylindrical surface
+                elif "horizontal" in geometry_lower:
+                    view_factor_sky = view_factor_sky_horizontal  # Flat roof
+                else:
+                    view_factor_sky = view_factor_sky_vertical
                 T_eff4 = view_factor_sky * T_sky_K**4 + (1 - view_factor_sky) * T_ground_K**4
                 T_eff_radiation = T_eff4**0.25
                 Q_rad_out = surface_emissivity * STEFAN_BOLTZMANN * outer_surface_area * (Ts_outer_K_guess**4 - T_eff4)
@@ -299,10 +306,11 @@ def calculate_surface_heat_transfer(
 
             dQ_out_dTs = h_outer * outer_surface_area + h_rad_linear * outer_surface_area
 
-            # Update using Newton's method with adaptive damping
-            Ts_outer_K_new = Ts_outer_K_guess - damping_factor * balance_diff / (dQ_cond_dTs - dQ_out_dTs)
+            # Update using Newton's method with damped blending
+            # Note: Apply damping only once via blending (not to Newton step itself)
+            Ts_outer_K_new = Ts_outer_K_guess - balance_diff / (dQ_cond_dTs - dQ_out_dTs)
 
-            # Apply damped update
+            # Apply damped update (blend new value with old for stability)
             Ts_outer_K_guess = damping_factor * Ts_outer_K_new + (1 - damping_factor) * Ts_outer_K_guess
 
             prev_balance_diff = balance_diff
@@ -339,7 +347,14 @@ def calculate_surface_heat_transfer(
             T_eff4_combined = (lateral_area * T_eff4_lateral + top_area * T_eff4_top) / outer_surface_area
             T_eff_radiation_final = T_eff4_combined**0.25
         else:
-            view_factor_sky = view_factor_sky_horizontal if "horizontal" in geometry_lower else view_factor_sky_vertical
+            # For horizontal cylinders, use ~0.5 (top half sees sky, bottom half sees ground)
+            # For horizontal flat surfaces (roofs), use view_factor_sky_horizontal (default 1.0)
+            if "horizontal" in geometry_lower and "cylinder" in geometry_lower:
+                view_factor_sky = 0.5  # Average for cylindrical surface
+            elif "horizontal" in geometry_lower:
+                view_factor_sky = view_factor_sky_horizontal  # Flat roof
+            else:
+                view_factor_sky = view_factor_sky_vertical
             T_eff4 = view_factor_sky * T_sky_K**4 + (1 - view_factor_sky) * T_ground_K**4
             T_eff_radiation_final = T_eff4**0.25
             Q_rad_final = surface_emissivity * STEFAN_BOLTZMANN * outer_surface_area * (Ts_outer_final**4 - T_eff4)
@@ -348,7 +363,9 @@ def calculate_surface_heat_transfer(
         Q_total_final = Q_conv_final + Q_rad_final - Q_solar_final
 
         # Create result with transparency fields
-        converged = i < max_iterations - 1
+        # Convergence is determined by whether the loop exited via break (converged) or
+        # completed all iterations without breaking (did not converge)
+        converged = abs(balance_diff) < tolerance_W
         result = {
             "total_heat_rate_loss_w": Q_total_final,
             "convective_heat_rate_w": Q_conv_final,

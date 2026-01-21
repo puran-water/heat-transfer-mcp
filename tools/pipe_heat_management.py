@@ -153,6 +153,19 @@ def pipe_heat_management(
         if installation_lower not in {"above_ground", "buried"}:
             return json.dumps({"error": f"Unsupported installation: {installation}"})
 
+        # Calculate estimated pipe inner diameter from wall layers
+        # This is used for freeze time calculations when pipe_inner_diameter_m is not provided
+        estimated_pipe_id_m: Optional[float] = None
+        if wall_layers:
+            # Compute inner radius by subtracting all layer thicknesses from outer radius
+            r_inner = float(outer_diameter_m) / 2.0
+            for layer in reversed(wall_layers):
+                thickness = layer.get("thickness", 0.0)
+                if thickness > 0:
+                    r_inner -= thickness
+            if r_inner > 0:
+                estimated_pipe_id_m = 2.0 * r_inner
+
         result: Dict[str, Any] = {
             "installation": installation_lower,
             "inputs_used": {
@@ -471,7 +484,16 @@ def pipe_heat_management(
                     )
             elif s == "freeze_time_h":
                 # Simple energy inventory to reach freeze_temperature and freeze
-                Di = float(pipe_inner_diameter_m or (0.8 * float(outer_diameter_m)))
+                # Use provided pipe_inner_diameter_m, or estimated from wall_layers,
+                # or fall back to 0.8 * outer_diameter_m (crude estimate when no layer info)
+                if pipe_inner_diameter_m is not None:
+                    Di = float(pipe_inner_diameter_m)
+                elif estimated_pipe_id_m is not None:
+                    Di = estimated_pipe_id_m
+                else:
+                    # Fallback: assume outer_diameter_m is bare pipe OD, ID ≈ 0.8 * OD
+                    # Note: This is inaccurate if outer_diameter_m includes insulation!
+                    Di = 0.8 * float(outer_diameter_m)
                 area_flow = math.pi * (Di**2) / 4.0
                 vol_per_m = area_flow * 1.0  # 1 m
                 rho = float(fluid_density_kg_m3 or 1000.0)

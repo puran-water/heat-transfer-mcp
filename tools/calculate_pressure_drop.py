@@ -304,7 +304,8 @@ def _calculate_phe_pressure_drop(
             v_port = mass_flow_kg_s / (rho * A_port)
             # Port losses: approximately 1.4 velocity heads per port pair (inlet + outlet)
             # Total = 2 ports * 0.7 = 1.4 velocity heads
-            dP_port = 1.4 * rho * v_port**2
+            # Velocity head = 0.5 * rho * v^2, so total = 1.4 * 0.5 * rho * v^2
+            dP_port = 1.4 * 0.5 * rho * v_port**2
 
         # Total pressure drop
         dP_total = dP_friction + dP_port

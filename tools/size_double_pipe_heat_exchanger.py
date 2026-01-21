@@ -351,8 +351,11 @@ def size_double_pipe_heat_exchanger(
             # May fail for laminar flow - use Hausen correlation
             if Re_inner < 2300:
                 # Hausen correlation for laminar developing flow
-                Nu_inner = 3.66 + 0.065 * (inner_pipe_inner_diameter_m / max_length_m) * Re_inner * Pr_inner / (
-                    1 + 0.04 * ((inner_pipe_inner_diameter_m / max_length_m) * Re_inner * Pr_inner) ** (2 / 3)
+                # Use actual pipe length for rating mode, or estimated length for sizing
+                # (midpoint of search range is more representative than max_length)
+                L_for_entry = pipe_length_m if pipe_length_m else (min_length_m + max_length_m) / 2
+                Nu_inner = 3.66 + 0.065 * (inner_pipe_inner_diameter_m / L_for_entry) * Re_inner * Pr_inner / (
+                    1 + 0.04 * ((inner_pipe_inner_diameter_m / L_for_entry) * Re_inner * Pr_inner) ** (2 / 3)
                 )
             else:
                 return json.dumps({"error": f"Inner pipe Nusselt calculation failed: {e}"})
@@ -360,17 +363,36 @@ def size_double_pipe_heat_exchanger(
         h_inner = Nu_inner * k_inner / inner_pipe_inner_diameter_m
 
         # Annulus Nusselt
-        # For annulus, use equivalent diameter for heat transfer to inner pipe surface
-        # De = (D_outer^2 - D_inner^2) / D_inner for heat transfer to inner pipe only
-        # Use hydraulic diameter D_h = D_outer - D_inner for friction/flow
+        # LIMITATION: The ht library's Nu_conv_internal is designed for circular tubes,
+        # not annular passages. This approximation can introduce errors of 10-30%
+        # depending on the radius ratio and heating boundary condition.
+        #
+        # For annulus flow, heat transfer depends on:
+        # - Radius ratio κ = D_inner/D_outer
+        # - Heating boundary condition (inner wall heated, outer wall heated, or both)
+        # - Flow regime (laminar/turbulent)
+        #
+        # For more accurate annulus correlations, consult:
+        # - Kays & Leung (1963) for laminar annulus flow
+        # - Petukhov & Roizen for turbulent annulus flow
+        # - Gnielinski modifications for annuli
+        #
+        # Length scales used:
+        # - D_h (hydraulic diameter) = D_outer - D_inner for friction/flow
+        # - D_e (equivalent diameter) = (D_outer² - D_inner²) / D_inner for heat transfer
 
         try:
-            # Annulus convection - use hydraulic diameter and ht library
+            # Annulus convection - use circular-tube correlation as approximation
+            # This is approximate; see limitations above
             Nu_annulus = Nu_conv_internal(Re=Re_annulus, Pr=Pr_annulus, eD=0)  # Smooth outer surface
         except Exception as e:
             if Re_annulus < 2300:
-                # Laminar annulus flow (simplified)
-                Nu_annulus = 3.66  # Simplified for fully developed laminar
+                # Laminar annulus flow with heat transfer at inner wall
+                # The Nusselt number depends on radius ratio κ = D_inner/D_outer
+                # For inner-wall-heated annulus, Nu > 3.66 (circular tube value)
+                # Correlation for UHF at inner wall only (approximation)
+                kappa = inner_pipe_outer_diameter_m / outer_pipe_inner_diameter_m
+                Nu_annulus = 4.36 * (1 + 0.3 * kappa)  # Typically 4.5-5.5 for common geometries
             else:
                 return json.dumps({"error": f"Annulus Nusselt calculation failed: {e}"})
 
