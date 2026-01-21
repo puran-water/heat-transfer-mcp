@@ -140,6 +140,27 @@ This MCP server provides consolidated omnitools and type-specific heat exchanger
 - Data coverage analysis with warnings for gaps > 20%
 - Automatic ERA5 fallback for missing dew point observations
 
+### January 2026: Codex Deep Technical Review Fixes
+
+Comprehensive first-principles review identified and fixed 11 technical issues:
+
+**Critical Fixes (6):**
+- **PHE Port Loss Formula**: Corrected from `1.4*ρ*v²` to `1.4*0.5*ρ*v²` (was 2x overestimate)
+- **Flat-Plate Turbulent Nu**: Fixed parenthesization to `(0.037*Re^0.8 - 871)*Pr^(1/3)`
+- **Zukauskas Shell-Side h**: Uses tube OD (`h = Nu*k/Do`) instead of equivalent diameter for tube-bank correlations
+- **Shell-Tube Sizing**: Zukauskas method now uses `Re = ρ*V_max*Do/μ` with proper crossflow velocity
+- **Horizontal Cylinder View Factor**: Uses 0.5 (half sky, half ground) instead of 1.0
+- **Horizontal Tank Headspace**: Fixed endcap modeling, removed erroneous interface subtraction
+
+**Moderate Fixes (3):**
+- **Natural Convection Beta**: Retrieves actual thermal expansion coefficient for liquids via `thermo.Chemical` instead of ideal gas approximation
+- **Annulus Convection**: Documented limitations of circular-tube correlation approximation, added radius-ratio correction for laminar flow
+- **Overall U Calculation**: Now uses `D_outer` parameter when provided, validates geometry consistency
+
+**Minor Fixes (2):**
+- **Convergence Flag**: Tracks actual convergence state instead of iteration count
+- **Unit-Aware Mappings**: Added heat exchanger sizing tools to automatic unit conversion system
+
 ## Installation
 
 ### Prerequisites
