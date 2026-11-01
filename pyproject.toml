@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "heat-transfer-mcp"
+version = "0.1.0"
+description = "Thermal engineering tools for heat exchangers, air cooling, insulation, heat loss and property calculations."
+requires-python = ">=3.12"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE*", "NOTICE", "THIRD-PARTY-NOTICES/**/*"]
+authors = [{name = "Puran Water"}]
+dependencies = [
+  "fastmcp>=3.0",
+  "numpy>=1.24.0",
+  "scipy>=1.10.0",
+  "ht>=1.0.2",
+  "chemicals>=1.1.0",
+  "fluids>=1.0.26",
+  "thermo>=0.3.0",
+  "CoolProp==7.2.0",
+  "pint>=0.20.0",
+  "meteostat>=2.1.4; python_version >= '3.11'",
+  "meteostat>=1.6.8,<2; python_version < '3.11'",
+  "pandas>=2.0.0",
+  "pytz>=2021.1",
+  "requests>=2.28.0",
+  "cachetools>=5.3.0",
+  "geopy>=2.4.0",
+  "python-dotenv>=0.19.0",
+  "PyYAML>=6.0",
+  "rich>=10.0.0",
+  "puran-mcp-support[thermal]==0.1.0"
+]
+
+[project.scripts]
+heat-transfer-mcp = "heat_transfer_mcp.__main__:main"
+
+[project.urls]
+Homepage = "https://puranwater.com"
+Repository = "https://github.com/puran-water/heat-transfer-mcp"
+Issues = "https://github.com/puran-water/heat-transfer-mcp/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/heat_transfer_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "README.md", "LICENSE*", "NOTICE", "THIRD-PARTY-NOTICES", "LICENSE-TABLE.md", "SCAN-REPORT.md", "TEST-RESULTS.md", "HISTORICAL-QUALITY.md", "RESOURCE-LICENSES.csv", "KNOWN-ISSUES.md", "pyproject.toml"]
