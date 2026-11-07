@@ -2,7 +2,17 @@
 
 Thermal engineering tools for heat exchangers, air cooling, insulation, heat loss and property calculations.
 
-Experimental v0.1.0. These tools return calculations and structured evidence; the calling LLM supplies explanations and reporting. Engineering review remains necessary.
+Experimental release series; `v0.1.0` is the initial pinned release and `main` follows current development. These tools return calculations and structured evidence; the calling LLM supplies explanations and reporting. Engineering review remains necessary.
+
+## Use it in an engineering workflow
+
+**A thermal-duty question.** Supply temperatures, flow, geometry, material properties and the intended heat-transfer model. Compare heat loss, insulation or exchanger behavior on that basis.
+
+The public release excludes the private materials catalogue. Do not assume every material or weather-data route is available.
+
+This is a public calculation component of [Puran Water's engineering toolchain](https://github.com/puran-water). The working system connects these tools to sizing-to-balance, proposal and BEP procedures and retained Studio review publications. Those internal workflows and project records are separate from this standalone package.
+
+Have a project that needs engineering interpretation or an independent review? [Work with Puran Water](https://puranwater.com/contact/). To report a software defect, open a repository issue with a minimal synthetic or redacted input, package revision, expected result and actual result.
 
 ## Quick start
 
@@ -65,7 +75,7 @@ package together from the current branches in your existing environment:
 
 ```sh
 uv pip install --upgrade --reinstall \
-  "puran-mcp-support[simulation] @ git+https://github.com/puran-water/fluids-mcp.git@main#subdirectory=support/puran-mcp-support" \
+  "puran-mcp-support @ git+https://github.com/puran-water/fluids-mcp.git@main#subdirectory=support/puran-mcp-support" \
   "heat-transfer-mcp @ git+https://github.com/puran-water/heat-transfer-mcp.git@main"
 ```
 
