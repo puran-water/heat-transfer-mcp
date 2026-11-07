@@ -54,3 +54,20 @@ See LICENSE, NOTICE and THIRD-PARTY-NOTICES for the wrapper and retained upstrea
 Built by [Puran Water](https://puranwater.com).
 
 Historical source-suite snapshot: 352 passed. These counts predate the cleaned standalone export; they are not its qualification result. Later repairs covered selected subsets only. See [historical quality scope](HISTORICAL-QUALITY.md).
+
+## Following current development
+
+The `main` branch receives approved development fixes through a one-way source
+mirror. Publication still checks secrets, private content, redistribution rights
+and package boundaries. Version tags such as `v0.1.0` remain immutable. Installed
+copies do not update automatically. To upgrade the server and its public support
+package together from the current branches in your existing environment:
+
+```sh
+uv pip install --upgrade --reinstall \
+  "puran-mcp-support[simulation] @ git+https://github.com/puran-water/fluids-mcp.git@main#subdirectory=support/puran-mcp-support" \
+  "heat-transfer-mcp @ git+https://github.com/puran-water/heat-transfer-mcp.git@main"
+```
+
+Pin both Git commits when repeatability is more important than following changes.
+The mirror records the source commit in `.puran-mirror.json`.
